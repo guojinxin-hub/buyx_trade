@@ -158,6 +158,7 @@ class BinanceFuturesClient {
     async placeAlgoOrder(symbol, orderParams) {
         const params = {
             symbol,
+            algoType: "CONDITIONAL",
             workingType: 'MARK_PRICE',
             ...orderParams
         };
