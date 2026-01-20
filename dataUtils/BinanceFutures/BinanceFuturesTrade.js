@@ -159,7 +159,7 @@ class BinanceFuturesTrader {
                     side: closeSide,
                     type: 'TAKE_PROFIT_MARKET', // 使用市价止盈
                     quantity: quantity,
-                    stopPrice: Number(takeProfitPrice),
+                    triggerPrice: Number(takeProfitPrice),
                     closePosition: 'true', // 平仓
                 });
                 console.log(`止盈单设置: ${takeProfitPrice}`);
@@ -171,7 +171,7 @@ class BinanceFuturesTrader {
                     side: closeSide,
                     type: 'STOP_MARKET', // 使用市价止损
                     quantity: quantity,
-                    stopPrice: Number(stopLossPrice),
+                    triggerPrice: Number(stopLossPrice),
                     closePosition: 'true', // 平仓
                 });
                 console.log(`止损单设置: ${stopLossPrice}`);

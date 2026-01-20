@@ -155,17 +155,18 @@ class BinanceFuturesClient {
 
         return this._sendRequest('POST', '/fapi/v1/order', params, true);
     }
+
     async placeAlgoOrder(symbol, orderParams) {
         const params = {
             symbol,
             algoType: "CONDITIONAL",
             workingType: 'MARK_PRICE',
+            positionSide: "BOTH",
             ...orderParams
         };
 
         // 处理特殊参数
         if (params.closePosition === 'true') {
-            params.closePosition = true;
             // 当使用closePosition时，不需要quantity参数
             delete params.quantity;
         }
