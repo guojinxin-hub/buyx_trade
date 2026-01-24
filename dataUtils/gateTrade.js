@@ -10,8 +10,10 @@ const TRADE_TEST_API_URL = process.env.TRADE_TEST_API_URL
 let client = new GateApi.ApiClient();
 
 // 更新保护止损单
-export const updateProtectionStopLoss = async (userOptions, symbol, direction, protectionPrice) => {
+export const updateProtectionStopLoss = async (req, res) => {
     try {
+        const { userOptions, symbol, direction, protectionPrice } = req.body;
+        
         // 1. 初始化 API 客户端
         const {apiKey, apiSecret, isTestOption} = userOptions
         client.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
@@ -63,12 +65,12 @@ export const updateProtectionStopLoss = async (userOptions, symbol, direction, p
             });
             
             console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);
-            return true;
+            return res.status(200).json({success: true, message: '保护止损单更新成功'});
         }
-        return false;
+        return res.status(200).json({success: false, message: '保护止损价格无效'});
     } catch (e) {
         console.log("更新保护止损单出错", e);
-        return false;
+        return res.status(500).json({success: false, message: '更新保护止损单出错', error: e.message});
     }
 };
 
