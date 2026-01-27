@@ -5,6 +5,7 @@ import {UserTradeOptionsModel} from "buydip_scheme/scheme/userTradeOptions";
 import {isEmpty} from "lodash";
 import {apiTrade} from "../dataUtils/apiTrade";
 import {saveUserBalance} from "../dataUtils/saveUserBalance";
+import {formatResponse} from "../dataUtils/formatResponse";
 
 const GateApi = require('gate-api');
 const TRADE_API_URL = process.env.TRADE_API_URL
@@ -30,6 +31,7 @@ export const testAPI = async (req, res) => {
             //     saveUserBalance(option.userId, futureAccount.body)
             // }
         }
+        return formatResponse(res, 200, 0, {}, 'success')
         // testCode()
     } catch (e) {
        // console.log(e)
