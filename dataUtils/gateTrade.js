@@ -223,24 +223,6 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                         tif: "ioc", // Immediate or Cancel (立即成交或取消)
                     }, {})
                     
-                    // 保存交易记录
-                    try {
-                        await saveTradeRecord(userOptions.userId, {
-                            symbol: `${symbol}_USDT`,
-                            price: String(createFuturesOrder.body.fillPrice),
-                            size: String(Math.abs(size)),
-                            direction: direction,
-                            exchange: 'gate',
-                            orderId: createFuturesOrder.body.id,
-                            leverage: String(Math.min(userOptions.leverage, findFutureContract.leverageMax)),
-                            status: 'completed'
-                        });
-                        console.log(`交易记录保存成功: ${createFuturesOrder.body.id}`);
-                    } catch (error) {
-                        console.error(`交易记录保存失败: ${error.message}`);
-                        // 继续执行，不因记录保存失败而中断交易流程
-                    }
-                    
                     // 6. 计算止损价格并挂单
                     // 买入止损价 = 成交价 * (1 - 止损百分比%)
                     // 卖出止损价 = 成交价 * (1 + 止损百分比%)
@@ -312,6 +294,24 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                                 orderType: direction === "buy" ? "close-long-position" : "close-short-position",
                             })
                         }
+                    }
+
+                    // 保存交易记录
+                    try {
+                        await saveTradeRecord(userOptions.userId, {
+                            symbol: `${symbol}_USDT`,
+                            price: String(createFuturesOrder.body.fillPrice),
+                            size: String(Math.abs(size)),
+                            direction: direction,
+                            exchange: 'gate',
+                            orderId: createFuturesOrder.body.id,
+                            leverage: String(Math.min(userOptions.leverage, findFutureContract.leverageMax)),
+                            status: 'completed'
+                        });
+                        console.log(`交易记录保存成功: ${createFuturesOrder.body.id}`);
+                    } catch (error) {
+                        console.error(`交易记录保存失败: ${error.message}`);
+                        // 继续执行，不因记录保存失败而中断交易流程
                     }
                 }
                 console.log("success")
