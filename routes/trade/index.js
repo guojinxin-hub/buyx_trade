@@ -1,6 +1,6 @@
 import express from "express";
 import { postRecommendData } from "./postRecommendData";
-import { updateProtectionStopLoss } from '../../dataUtils/gateTrade'
+import { updateProtectionStopLoss } from '../../dataUtils/apiTrade'
 export const tradeRoute = express.Router();
 tradeRoute.post('/postRecommendData', postRecommendData)
 
