@@ -1,8 +1,8 @@
 import {intersectionWith, isEmpty} from "lodash";
 import {formatPrice} from "./formatPrice";
 import {decrypt} from "./utils";
-import {saveUserBalance} from "./saveUserBalance";
 import {saveTradeRecord} from "./saveTradeRecord";
+import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
 
 const GateApi = require('gate-api');
 const TRADE_API_URL = process.env.TRADE_API_URL
@@ -65,8 +65,28 @@ export const updateProtectionStopLoss = async (req, res) => {
             });
             
             console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);
+            
+            // 更新对应的交易记录状态为completed
+            try {
+                await TradeRecordModel.updateOne(
+                    {
+                        userId: userOptions.userId,
+                        symbol: symbol,
+                        direction: direction,
+                        status: 'pending'
+                    },
+                    {
+                        $set: {status: 'completed'}
+                    }
+                );
+                console.log(`交易记录状态已更新为completed`);
+            } catch (error) {
+                console.error(`交易记录状态更新失败: ${error.message}`);
+            }
+            
             return res.status(200).json({success: true, message: '保护止损单更新成功'});
         }
+
         return res.status(200).json({success: false, message: '保护止损价格无效'});
     } catch (e) {
         console.log("更新保护止损单出错", e);
@@ -297,22 +317,28 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                     }
 
                     // 保存交易记录
-                    try {
-                        await saveTradeRecord(userOptions.userId, {
-                            symbol: `${symbol}_USDT`,
-                            price: String(createFuturesOrder.body.fillPrice),
-                            size: String(Math.abs(size)),
-                            direction: direction,
-                            exchange: 'gate',
-                            orderId: createFuturesOrder.body.id,
-                            leverage: String(Math.min(userOptions.leverage, findFutureContract.leverageMax)),
-                            status: 'completed'
-                        });
-                        console.log(`交易记录保存成功: ${createFuturesOrder.body.id}`);
-                    } catch (error) {
-                        console.error(`交易记录保存失败: ${error.message}`);
-                        // 继续执行，不因记录保存失败而中断交易流程
+                    if (createFuturesOrder?.body?.id) {
+                        try {
+                            await saveTradeRecord(userOptions.userId, {
+                                symbol: `${symbol}`,
+                                price: String(createFuturesOrder.body.fillPrice),
+                                size: String(Math.abs(size)),
+                                direction: direction,
+                                exchange: 'gate',
+                                orderId: createFuturesOrder.body.id,
+                                leverage: String(Math.min(userOptions.leverage, findFutureContract.leverageMax)),
+                                status: 'pending'  // 先设为待处理状态
+                            });
+                            
+                            console.log(`交易记录保存成功: ${createFuturesOrder.body.id}`);
+                            
+                           
+                        } catch (error) {
+                            console.error(`交易记录保存或状态更新失败: ${error.message}`);
+                            // 继续执行，不因记录保存失败而中断交易流程
+                        }
                     }
+
                 }
                 console.log("success")
             } else {
