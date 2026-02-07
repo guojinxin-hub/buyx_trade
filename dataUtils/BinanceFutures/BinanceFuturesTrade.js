@@ -316,22 +316,46 @@ class BinanceFuturesTrader {
     }
 
     /**
-     * 取消所有挂单
+     * 取消挂单
+     * @param {string} symbol - 交易对
+     * @param {string} type - 订单类型: 'all' 取消所有订单, 'stop_loss' 只取消止损订单, 'take_profit' 只取消止盈订单
      */
-    async cancelAllOrders(symbol) {
+    async cancelOrders(symbol, type = 'all') {
         try {
             const openOrders = await this.client._sendRequest('GET', '/fapi/v1/openOrders', {symbol}, true);
+            let cancelledCount = 0;
 
             for (const order of openOrders) {
-                await this.client.cancelOrder(symbol, order.orderId);
-                console.log(`已取消订单: ${order.orderId}`);
+                // 根据类型过滤订单
+                let shouldCancel = false;
+                
+                if (type === 'all') {
+                    shouldCancel = true;
+                } else if (type === 'stop_loss' && order.type === 'STOP_MARKET') {
+                    shouldCancel = true;
+                } else if (type === 'take_profit' && order.type === 'TAKE_PROFIT_MARKET') {
+                    shouldCancel = true;
+                }
+                
+                if (shouldCancel) {
+                    await this.client.cancelOrder(symbol, order.orderId);
+                    console.log(`已取消订单: ${order.orderId}, 类型: ${order.type}`);
+                    cancelledCount++;
+                }
             }
 
-            return {success: true, cancelledCount: openOrders.length};
+            return {success: true, cancelledCount: cancelledCount};
         } catch (error) {
             console.error('取消订单失败:', error.message);
             throw error;
         }
+    }
+
+    /**
+     * 取消所有挂单
+     */
+    async cancelAllOrders(symbol) {
+        return this.cancelOrders(symbol, 'all');
     }
 
     /**

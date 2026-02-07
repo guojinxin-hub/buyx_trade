@@ -16,34 +16,46 @@ export const apiTrade = async ({tradeData, userOptions}) => {
     }
 }
 
-export const updateProtectionStopLoss = async (req, res) => {
-    const {userId} = req.body;
-    
+export const updateProtectionStopLoss = async (userOption, symbol, direction, protectionPrice) => {
     try {
-        // 从数据库中查询用户的交易配置
-        const userOptions = await UserTradeOptionsModel.findOne({userId: userId});
+        console.log(`更新保护止损单: 用户 ${userOption.userId}, 交易对 ${symbol}, 方向 ${direction}, 价格 ${protectionPrice}`);
         
-        if (!userOptions) {
-            return res.status(404).json({success: false, message: '用户配置不存在'});
-        }
+        // 这里可以根据需要添加具体的实现逻辑
+        // 例如，直接调用对应的交易所实现
         
-        // 更新请求体中的userOptions
-        req.body.userOptions = userOptions;
+        const {belong} = userOption;
         
-        const {belong} = userOptions;
+        // 创建模拟的req和res对象
+        const req = {
+            body: {
+                userOptions: userOption,
+                symbol,
+                direction,
+                protectionPrice
+            }
+        };
+        
+        const res = {
+            status: (code) => {
+                return {
+                    json: (data) => {
+                        console.log('保护止损单更新响应:', data);
+                        return data;
+                    }
+                };
+            }
+        };
         
         switch (belong) {
             case 'Gate':
-                await updateGateProtectionStopLoss(req, res);
-                break;
+                return await updateGateProtectionStopLoss(req, res);
             case 'Binance':
-                await updateBinanceProtectionStopLoss(req, res);
-                break;
+                return await updateBinanceProtectionStopLoss(req, res);
             default:
-                return res.status(400).json({success: false, message: '不支持的交易所'});
+                return {success: false, message: '不支持的交易所'};
         }
     } catch (error) {
-        console.error('查询用户配置出错:', error);
-        return res.status(500).json({success: false, message: '查询用户配置出错', error: error.message});
+        console.error('更新保护止损单出错:', error);
+        return {success: false, message: '更新保护止损单出错', error: error.message};
     }
 }

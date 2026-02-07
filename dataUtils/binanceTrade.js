@@ -81,12 +81,12 @@ export const updateProtectionStopLoss = async (req, res) => {
         const formattedPrice = formatPrice(protectionPrice.toString(), Number(priceStep));
         
         if (Number(formattedPrice) > 0) {
-            // 4. 清除该合约旧的止盈止损条件单
+            // 4. 清除该合约旧的止损条件单，保留止盈条件单
             try {
-                await trader.cancelAllOrders(`${symbol}USDT`);
+                await trader.cancelOrders(`${symbol}USDT`, 'stop_loss');
                 await new Promise(resolve => setTimeout(resolve, 100));
             } catch (e) {
-                console.log("清除旧条件单失败", e);
+                console.log("清除旧止损条件单失败", e);
             }
             
             // 5. 创建新的保护止损条件单
@@ -100,25 +100,6 @@ export const updateProtectionStopLoss = async (req, res) => {
             });
             
             console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);
-            
-            // 6. 更新对应的交易记录状态为completed
-            try {
-                await TradeRecordModel.updateOne(
-                    {
-                        userId: userOptions.userId,
-                        symbol: symbol,
-                        direction: direction,
-                        status: 'pending'
-                    },
-                    {
-                        $set: {status: 'completed'}
-                    }
-                );
-                console.log(`交易记录状态已更新为completed`);
-            } catch (error) {
-                console.error(`交易记录状态更新失败: ${error.message}`);
-            }
-            
             return res.status(200).json({success: true, message: '保护止损单更新成功'});
         }
 
