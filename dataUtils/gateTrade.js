@@ -25,8 +25,19 @@ export const updateProtectionStopLoss = async (req, res) => {
         const settle = "usdt" // 结算货币为 USDT 本位合约
         
         // 3. 获取合约详细信息
-        const futureContract = await futuresApi.getFuturesContract(settle, `${symbol}_USDT`);
-        const findFutureContract = futureContract.body;
+        let futureContract;
+        let findFutureContract;
+        try {
+            futureContract = await futuresApi.getFuturesContract(settle, `${symbol}_USDT`);
+            findFutureContract = futureContract.body;
+        } catch (e) {
+            console.log("获取合约详细信息失败", e);
+            // 检查是否是合约不存在的错误
+            if (e.response && e.response.data && e.response.data.label === "CONTRACT_NOT_FOUND") {
+                return res.status(400).json({success: false, message: '合约不存在', error: e.message});
+            }
+            throw e;
+        }
         
         // 4. 格式化保护止损价格
         const formattedPrice = formatPrice(protectionPrice.toString(), findFutureContract.orderPriceRound);

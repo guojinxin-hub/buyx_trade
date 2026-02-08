@@ -103,23 +103,49 @@ export const updateProtectionStopLoss = async (req, res) => {
         const formattedPrice = formatPrice(protectionPrice.toString(), Number(priceStep));
         
         if (Number(formattedPrice) > 0) {
-            // 4. 清除该合约旧的止损条件单，保留止盈条件单
+            // 4. 清除该合约所有的条件单，包括止损和止盈
             try {
-                await trader.cancelOrders(`${symbol}USDT`, 'stop_loss');
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // 先尝试清除所有类型的条件单
+                await trader.cancelAllOrders(`${symbol}USDT`);
+                // 增加等待时间，确保币安API有足够的时间处理清除操作
+                await new Promise(resolve => setTimeout(resolve, 500));
             } catch (e) {
-                console.log("清除旧止损条件单失败", e);
+                console.log("清除旧条件单失败", e);
             }
             
             // 5. 创建新的保护止损条件单
             const closeSide = direction === "buy" ? 'SELL' : "BUY";
             
-            await trader.client.placeAlgoOrder(`${symbol}USDT`, {
-                side: closeSide,
-                type: 'STOP_MARKET', // 使用市价止损
-                triggerPrice: Number(formattedPrice),
-                closePosition: 'true', // 平仓
-            });
+            try {
+                await trader.client.placeAlgoOrder(`${symbol}USDT`, {
+                    side: closeSide,
+                    type: 'STOP_MARKET', // 使用市价止损
+                    triggerPrice: Number(formattedPrice),
+                    closePosition: 'true', // 平仓
+                });
+            } catch (e) {
+                console.log("创建保护止损单失败", e);
+                // 检查是否是因为重复订单错误
+                if (e.message.includes("An open stop or take profit order with GTE and closePosition in the direction is existing")) {
+                    // 再次尝试清除所有订单
+                    try {
+                        await trader.cancelAllOrders(`${symbol}USDT`);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        // 再次尝试创建订单
+                        await trader.client.placeAlgoOrder(`${symbol}USDT`, {
+                            side: closeSide,
+                            type: 'STOP_MARKET', // 使用市价止损
+                            triggerPrice: Number(formattedPrice),
+                            closePosition: 'true', // 平仓
+                        });
+                    } catch (retryError) {
+                        console.log("重试创建保护止损单失败", retryError);
+                        throw retryError;
+                    }
+                } else {
+                    throw e;
+                }
+            }
             
             console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);
             return res.status(200).json({success: true, message: '保护止损单更新成功'});
