@@ -2,6 +2,7 @@ import BinanceFuturesTrade from "./BinanceFutures/BinanceFuturesTrade";
 import {decrypt} from "./utils";
 import {intersectionWith, isEmpty} from "lodash";
 import {saveUserBalance} from "./saveUserBalance";
+import {saveTradeRecord} from "./saveTradeRecord";
 import {formatPrice} from "./formatPrice";
 import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
 
@@ -52,6 +53,27 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
                         symbolInfo: item.symbolInfo,
                     });
                     console.log('交易结果:', result);
+                    
+                    // 保存交易记录
+                    if (result.success && result.order && result.order.orderId) {
+                        try {
+                            await saveTradeRecord(userOptions.userId, {
+                                symbol: `${item.symbol}`,
+                                price: String(result.filledPrice),
+                                size: String(result.filledQuantity),
+                                direction: item.direction,
+                                exchange: 'binance',
+                                orderId: result.order.orderId.toString(),
+                                leverage: String(leverage),
+                                status: 'pending'  // 先设为待处理状态
+                            });
+                            
+                            console.log(`交易记录保存成功: ${result.order.orderId}`);
+                        } catch (error) {
+                            console.error(`交易记录保存失败: ${error.message}`);
+                            // 继续执行，不因记录保存失败而中断交易流程
+                        }
+                    }
                 }
             }
         }
