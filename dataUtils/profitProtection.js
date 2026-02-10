@@ -96,6 +96,7 @@ const handleSingleTradeRecord = async (userOption, record, currentPrice) => {
         const symbol = record.symbol;
         const entryPrice = parseFloat(record.price);
         const direction = record.direction;
+        const exchange = record.exchange;
 
         // 计算盈利比例
         const profitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
@@ -112,7 +113,7 @@ const handleSingleTradeRecord = async (userOption, record, currentPrice) => {
 
             // 调用盈利保护服务更新止损单，使用重试机制
             const result = await retryAsync(
-                () => updateProtectionStopLoss(userOption, symbol, direction, protectionPrice),
+                () => updateProtectionStopLoss(userOption, symbol, direction, protectionPrice, exchange),
                 3, // 最大重试3次
                 1500 // 每次重试间隔1500ms
             );

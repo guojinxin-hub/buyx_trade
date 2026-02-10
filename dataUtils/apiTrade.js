@@ -16,14 +16,12 @@ export const apiTrade = async ({tradeData, userOptions}) => {
     }
 }
 
-export const updateProtectionStopLoss = async (userOption, symbol, direction, protectionPrice) => {
+export const updateProtectionStopLoss = async (userOption, symbol, direction, protectionPrice, exchange) => {
     try {
-        console.log(`更新保护止损单: 用户 ${userOption.userId}, 交易对 ${symbol}, 方向 ${direction}, 价格 ${protectionPrice}`);
+        console.log(`更新保护止损单: 用户 ${userOption.userId}, 交易对 ${symbol}, 方向 ${direction}, 价格 ${protectionPrice}, 交易所 ${exchange}`);
         
         // 这里可以根据需要添加具体的实现逻辑
         // 例如，直接调用对应的交易所实现
-        
-        const {belong} = userOption;
         
         // 创建模拟的req和res对象
         const req = {
@@ -46,10 +44,12 @@ export const updateProtectionStopLoss = async (userOption, symbol, direction, pr
             }
         };
         
-        switch (belong) {
-            case 'Gate':
+        switch (exchange) {
+            case 'gate':
+                console.log('调用 Gate 交易所的保护止损更新');
                 return await updateGateProtectionStopLoss(req, res);
-            case 'Binance':
+            case 'binance':
+                console.log('调用 Binance 交易所的保护止损更新');
                 return await updateBinanceProtectionStopLoss(req, res);
             default:
                 return {success: false, message: '不支持的交易所'};
