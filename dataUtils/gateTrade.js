@@ -48,7 +48,7 @@ export const updateProtectionStopLoss = async (req, res) => {
                 const priceTriggeredOrder = await futuresApi.listPriceTriggeredOrders(settle, "open", {
                     contract: `${symbol}_USDT`,
                 });
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, 200));
                 
                 // 过滤出止损条件单
                 const stopLossOrders = priceTriggeredOrder.body.filter(order => {
@@ -58,7 +58,7 @@ export const updateProtectionStopLoss = async (req, res) => {
                 
                 if (stopLossOrders.length > 0) {
                     await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`});
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise(resolve => setTimeout(resolve, 200));
                 }
             } catch (e) {
                 console.log("清除旧止损条件单失败", e);
@@ -121,7 +121,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
             try {
                 const futureContract = await futuresApi.getFuturesContract(settle, `${tradeItem.symbol}_USDT`)
                 futureContractData.push(futureContract.body)
-                await new Promise(resolve => setTimeout(resolve, 100)); // 休眠 100ms 避免触发限流
+                await new Promise(resolve => setTimeout(resolve, 200)); // 休眠 100ms 避免触发限流
             } catch (e) {
                 //  console.log("获取合约币种出错", e)
             }
@@ -177,7 +177,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                     else if (position && ((position.body.size < 0 && direction === "buy") || (position.body.size > 0 && direction === "sell"))) {
                         // 1. 调整杠杆（确保平仓时杠杆正确，虽然平仓通常不需要特定杠杆，但为了安全）
                         await futuresApi.updatePositionLeverage(settle, `${symbol}_USDT`, position.body.leverage, {})
-                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await new Promise(resolve => setTimeout(resolve, 200));
                         
                         // 2. 下市价平仓单 (price=0, tif='ioc' 即立即成交或取消)
                         await futuresApi.createFuturesOrder(settle, {
@@ -186,7 +186,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                             price: 0,
                             tif: "ioc",
                         }, {})
-                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await new Promise(resolve => setTimeout(resolve, 200));
                         
                         // 3. 反手开新仓
                         await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
@@ -197,7 +197,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                             await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
                         }
                     }
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise(resolve => setTimeout(resolve, 200));
                 } catch (e) {
                     console.log("e", e)
                 }
@@ -233,7 +233,7 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                     // 4. 设置杠杆
                     // 杠杆倍数取用户设置和合约最大杠杆的最小值
                     await futuresApi.updatePositionLeverage(settle, `${symbol}_USDT`, `${Math.min(userOptions.leverage, findFutureContract.leverageMax)}`, {})
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise(resolve => setTimeout(resolve, 200));
                     
                     // 5. 下市价单
                     const createFuturesOrder = await futuresApi.createFuturesOrder(settle, {
@@ -251,16 +251,16 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                         `${(1 + (Number(userOptions.stopLoss) / 100)) * Number(createFuturesOrder.body.fillPrice)}`
                     
                     const price = formatPrice(lossPrice, findFutureContract.orderPriceRound)
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise(resolve => setTimeout(resolve, 200));
                     
                     // 6.1 清除该合约旧的止盈止损条件单 (避免重复挂单)
                     const priceTriggeredOrder = await futuresApi.listPriceTriggeredOrders(settle, "open", {
                         contract: `${symbol}_USDT`,
                     })
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise(resolve => setTimeout(resolve, 200));
                     if (priceTriggeredOrder.body.length > 0) {
                         await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`})
-                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await new Promise(resolve => setTimeout(resolve, 200));
                     }
                     
                     // 6.2 创建止损条件单 (条件单类型为平仓)
@@ -286,7 +286,7 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                     
                     // 7. 计算止盈价格并挂单 (如果用户配置了止盈)
                     if (userOptions.takeProfit) {
-                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await new Promise(resolve => setTimeout(resolve, 200));
                         // 买入止盈价 = 成交价 * (1 + 止盈百分比%)
                         // 卖出止盈价 = 成交价 * (1 - 止盈百分比%)
                         const profitPrice = direction === "buy" ? 

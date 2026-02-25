@@ -130,7 +130,7 @@ export const updateProtectionStopLoss = async (req, res) => {
                     // 再次尝试清除所有订单
                     try {
                         await trader.cancelAllOrders(`${symbol}USDT`);
-                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        await new Promise(resolve => setTimeout(resolve, 500));
                         // 再次尝试创建订单
                         await trader.client.placeAlgoOrder(`${symbol}USDT`, {
                             side: closeSide,
