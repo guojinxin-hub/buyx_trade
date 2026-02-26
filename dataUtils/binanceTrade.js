@@ -1,6 +1,7 @@
 import BinanceFuturesTrade from "./BinanceFutures/BinanceFuturesTrade";
 import {decrypt} from "./utils";
 import {intersectionWith, isEmpty} from "lodash";
+import {saveUserBalance} from "./saveUserBalance";
 
 export const binanceTrade = async ({tradeData, userOptions}) => {
     try {
@@ -27,6 +28,14 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
         }
         if (isActive) {
             const {direction, insurance, maxVolume, leverage, stopLoss, takeProfit} = userOptions
+            const accountInfo = await trader.checkUserAccount();
+            const {availableBalance, totalUnrealizedProfit, totalWalletBalance} = accountInfo
+            const accountFunds = {
+                total: totalWalletBalance,
+                unrealisedPnl: totalUnrealizedProfit,
+                available: availableBalance
+            }
+            await saveUserBalance(userOptions.userId, accountFunds)
             for (const item of futureContractData) {
                 if (direction === 'all' || direction === item.direction) {
                     // 执行交易

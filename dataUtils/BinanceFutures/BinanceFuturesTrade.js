@@ -7,6 +7,15 @@ class BinanceFuturesTrader {
         this.client = new BinanceFuturesClient(apiKey, apiSecret, isTestnet);
     }
 
+    async checkUserAccount() {
+        try {
+            return await this.client.getAccountInfo();
+        } catch (e) {
+            console.error('获取Binance余额失败:', e.message);
+            throw e;
+        }
+    }
+
     /**
      * 检查保证金是否充足
      */
@@ -48,8 +57,8 @@ class BinanceFuturesTrader {
             // 计算数量并调整到合适的精度
             let quantity = usdtAmount / currentPrice;
             quantity = Math.floor(quantity / stepSize) * stepSize;
-
-            return quantity.toFixed(symbolInfo.quantityPrecision);
+            quantity = quantity.toFixed(symbolInfo.quantityPrecision);
+            return quantity
         } catch (error) {
             console.error('计算数量失败:', error.message);
             throw error;
@@ -142,29 +151,28 @@ class BinanceFuturesTrader {
                 }
             }
 
+            console.log("takeProfitPrice", takeProfitPrice, "stopLossPrice", stopLossPrice)
             const closeSide = direction === 'LONG' ? 'SELL' : 'BUY';
             // 设置止盈单 - 使用正确的订单类型
-            if (takeProfitPercent > 0) {
-                results.takeProfit = await this.client.placeOrder(symbol, {
+            if (takeProfitPercent > 0 && Number(takeProfitPrice) > 0) {
+                results.takeProfit = await this.client.placeAlgoOrder(symbol, {
                     side: closeSide,
                     type: 'TAKE_PROFIT_MARKET', // 使用市价止盈
                     quantity: quantity,
-                    stopPrice: Number(takeProfitPrice),
+                    triggerPrice: Number(takeProfitPrice),
                     closePosition: 'true', // 平仓
-                    timeInForce: 'GTC'
                 });
                 console.log(`止盈单设置: ${takeProfitPrice}`);
             }
 
             // 设置止损单 - 使用正确的订单类型
-            if (stopLossPercent > 0) {
-                results.stopLoss = await this.client.placeOrder(symbol, {
+            if (stopLossPercent > 0 && Number(stopLossPrice) > 0) {
+                results.stopLoss = await this.client.placeAlgoOrder(symbol, {
                     side: closeSide,
                     type: 'STOP_MARKET', // 使用市价止损
                     quantity: quantity,
-                    stopPrice: Number(stopLossPrice),
+                    triggerPrice: Number(stopLossPrice),
                     closePosition: 'true', // 平仓
-                    timeInForce: 'GTC'
                 });
                 console.log(`止损单设置: ${stopLossPrice}`);
             }
@@ -172,6 +180,24 @@ class BinanceFuturesTrader {
         } catch (error) {
             console.error('设置止盈止损失败:', error.message);
             throw error;
+        }
+    }
+
+    async setupDualPositionMode() {
+        try {
+            // 获取当前持仓模式
+            const currentMode = await this.client.getPositionMode();
+            console.log('当前持仓模式:', currentMode);
+            if (currentMode.dualSidePosition) {
+                // 设置为单向持仓模式
+                const result = await this.client.setPositionMode(false);
+                console.log('设置单向持仓模式成功:', result);
+                // 验证设置
+                const newMode = await this.client.getPositionMode();
+                console.log('新的持仓模式:', newMode);
+            }
+        } catch (error) {
+            console.error('设置持仓模式失败:', error);
         }
     }
 
@@ -189,7 +215,6 @@ class BinanceFuturesTrader {
             stopLossPercent,
             symbolInfo,
         } = params;
-
         try {
             console.log(`开始执行交易: ${symbol}, 方向: ${direction}, 金额: ${usdtAmount} USDT`);
 
@@ -197,24 +222,39 @@ class BinanceFuturesTrader {
             if (!await this.checkMargin(symbol, usdtAmount, minMargin)) {
                 throw new Error('保证金检查失败');
             }
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // 设置单向持仓
+            await this.setupDualPositionMode()
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             // 2. 设置杠杆
             await this.client.setLeverage(symbol, leverage);
             console.log(`设置杠杆: ${leverage}x`);
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             // 3. 获取当前价格和计算数量
             const currentPrice = await this.client.getCurrentPrice(symbol);
-            const quantity = await this.calculateQuantity(symbolInfo, usdtAmount, currentPrice);
-            console.log(`当前价格: ${currentPrice}, 计算数量: ${quantity}`);
+            await new Promise(resolve => setTimeout(resolve, 50));
 
+            const quantity = await this.calculateQuantity(symbolInfo, usdtAmount, currentPrice);
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            console.log(`当前价格: ${currentPrice}, 计算数量: ${quantity}`);
+            if (quantity == '0') {
+                return
+            }
             // 4. 检查当前持仓并平仓（如果需要）
             const currentPosition = await this.getCurrentPosition(symbol);
+            await new Promise(resolve => setTimeout(resolve, 50));
+
             if (currentPosition) {
                 const currentDirection = currentPosition.positionSide;
                 if ((currentDirection === 'LONG' && direction === 'SHORT') ||
                     (currentDirection === 'SHORT' && direction === 'LONG')) {
                     console.log(`发现反向持仓，先平仓: ${currentDirection}`);
                     await this.closePosition(symbol);
+                    await new Promise(resolve => setTimeout(resolve, 50));
                 }
             }
 
@@ -222,26 +262,28 @@ class BinanceFuturesTrader {
             const orderSide = direction === 'LONG' ? 'BUY' : 'SELL';
             const orderResult = await this.client.placeMarketOrder(symbol, orderSide, quantity);
             console.log('下单成功:', orderResult);
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             // 6. 获取成交均价和实际数量
             let filledPrice = currentPrice;
             let filledQuantity = quantity;
 
-            if (orderResult.orderId) {
-                // 等待订单完全成交
-                await new Promise(resolve => setTimeout(resolve, 2000));
-
-                // 获取订单详情
-                const orderInfo = await this.client.getOrder(symbol, orderResult.orderId);
-                filledPrice = parseFloat(orderInfo.avgPrice) || currentPrice;
-
-                // 获取实际成交数量
-                if (orderInfo.executedQty) {
-                    filledQuantity = parseFloat(orderInfo.executedQty);
-                }
-
-                console.log(`订单详情: 均价=${filledPrice}, 数量=${filledQuantity}, 状态=${orderInfo.status}`);
-            }
+            // if (orderResult.orderId) {
+            //     // 等待订单完全成交
+            //     await new Promise(resolve => setTimeout(resolve, 2000));
+            //
+            //     // 获取订单详情
+            //     const orderInfo = await this.client.getOrder(symbol, orderResult.orderId);
+            //     console.log('订单详情:', orderInfo);
+            //     filledPrice = parseFloat(orderInfo.avgPrice) || currentPrice;
+            //
+            //     // 获取实际成交数量
+            //     if (orderInfo.executedQty) {
+            //         filledQuantity = parseFloat(orderInfo.executedQty);
+            //     }
+            //
+            //     console.log(`订单详情: 均价=${filledPrice}, 数量=${filledQuantity}, 状态=${orderInfo.status}`);
+            // }
 
             // 7. 设置止盈止损 - 使用实际成交价格和数量
             const tpSlResults = await this.setTakeProfitAndStopLoss(
@@ -254,6 +296,7 @@ class BinanceFuturesTrader {
             );
 
             console.log('交易完成，止盈止损已设置');
+            await new Promise(resolve => setTimeout(resolve, 100));
 
             return {
                 success: true,

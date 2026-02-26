@@ -1,6 +1,7 @@
 import {intersectionWith, isEmpty} from "lodash";
 import {formatPrice} from "./formatPrice";
 import {decrypt} from "./utils";
+import {saveUserBalance} from "./saveUserBalance";
 
 const GateApi = require('gate-api');
 const TRADE_API_URL = process.env.TRADE_API_URL
@@ -35,6 +36,7 @@ export const gateTrade = async ({
         }
         if (userOptions.isActive) {
             const futureAccount = await futuresApi.listFuturesAccounts(settle)
+            await saveUserBalance(userOptions.userId, futureAccount.body)
             // 获取用户的账户信息，查看持仓模式，如果是双向持仓，则需要改为单向持仓
             // 如果持仓模式修改不成功则拒绝下单操作
             let inDualMode = futureAccount.body.inDualMode
@@ -131,45 +133,48 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                         await new Promise(resolve => setTimeout(resolve, 100));
                     }
                     await new Promise(resolve => setTimeout(resolve, 100));
-                    await futuresApi.createPriceTriggeredOrder(settle, {
-                        initial: {
-                            contract: `${symbol}_USDT`,
-                            size: 0,// 平仓
-                            price: "0",// 止损
-                            reduceOnly: true,
-                            close: true,
-                            tif: "ioc",
-                        },
-                        trigger: {
-                            strategyType: 0,
-                            priceType: 0,
-                            price: price,
-                            rule: direction === "buy" ? 2 : 1
-                        },
-                        orderType: direction === "buy" ? "close-long-position" : "close-short-position",
-                    })
-                    if (userOptions.takeProfit) {
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        const profitPrice = direction === "buy" ? `${(1 + (Number(userOptions.takeProfit) / 100)) * Number(createFuturesOrder.body.fillPrice)}` : `${(1 - (Number(userOptions.takeProfit) / 100)) * Number(createFuturesOrder.body.fillPrice)}`
-                        const price = formatPrice(profitPrice, findFutureContract.orderPriceRound)
-                        console.log("profitPrice", price)
+                    if (Number(price) > 0) {
                         await futuresApi.createPriceTriggeredOrder(settle, {
                             initial: {
                                 contract: `${symbol}_USDT`,
                                 size: 0,// 平仓
-                                price: "0",// 止盈
+                                price: "0",// 止损
                                 reduceOnly: true,
-                                tif: "ioc",
                                 close: true,
+                                tif: "ioc",
                             },
                             trigger: {
                                 strategyType: 0,
                                 priceType: 0,
                                 price: price,
-                                rule: direction === "buy" ? 1 : 2
+                                rule: direction === "buy" ? 2 : 1
                             },
                             orderType: direction === "buy" ? "close-long-position" : "close-short-position",
                         })
+                    }
+                    if (userOptions.takeProfit) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        const profitPrice = direction === "buy" ? `${(1 + (Number(userOptions.takeProfit) / 100)) * Number(createFuturesOrder.body.fillPrice)}` : `${(1 - (Number(userOptions.takeProfit) / 100)) * Number(createFuturesOrder.body.fillPrice)}`
+                        const price = formatPrice(profitPrice, findFutureContract.orderPriceRound)
+                        if (Number(price) > 0) {
+                            await futuresApi.createPriceTriggeredOrder(settle, {
+                                initial: {
+                                    contract: `${symbol}_USDT`,
+                                    size: 0,// 平仓
+                                    price: "0",// 止盈
+                                    reduceOnly: true,
+                                    tif: "ioc",
+                                    close: true,
+                                },
+                                trigger: {
+                                    strategyType: 0,
+                                    priceType: 0,
+                                    price: price,
+                                    rule: direction === "buy" ? 1 : 2
+                                },
+                                orderType: direction === "buy" ? "close-long-position" : "close-short-position",
+                            })
+                        }
                     }
                 }
                 console.log("success")

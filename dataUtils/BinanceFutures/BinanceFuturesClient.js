@@ -88,9 +88,30 @@ class BinanceFuturesClient {
         return this._sendRequest('GET', '/fapi/v2/account', {}, true);
     }
 
+    // 设置双向持仓模式
+    async setPositionMode(dualSidePosition) {
+        /**
+         * 设置持仓模式
+         * @param {boolean} dualSidePosition - true: 双向持仓模式, false: 单向持仓模式
+         * 注意：更改持仓模式时，必须没有未平仓仓位和挂单
+         */
+        return this._sendRequest('POST', '/fapi/v1/positionSide/dual', {
+            dualSidePosition: dualSidePosition.toString()
+        }, true);
+    }
+
+    // 获取当前持仓模式
+    async getPositionMode() {
+        /**
+         * 获取当前持仓模式
+         * @returns {Object} - 包含dualSidePosition字段
+         */
+        return this._sendRequest('GET', '/fapi/v1/positionSide/dual', {}, true);
+    }
+
     // 获取当前价格
     async getCurrentPrice(symbol) {
-        const data = await this._sendRequest('GET', '/fapi/v1/ticker/price', { symbol });
+        const data = await this._sendRequest('GET', '/fapi/v1/ticker/price', {symbol});
         return parseFloat(data.price);
     }
 
@@ -134,6 +155,25 @@ class BinanceFuturesClient {
 
         return this._sendRequest('POST', '/fapi/v1/order', params, true);
     }
+
+    async placeAlgoOrder(symbol, orderParams) {
+        const params = {
+            symbol,
+            algoType: "CONDITIONAL",
+            workingType: 'MARK_PRICE',
+            positionSide: "BOTH",
+            ...orderParams
+        };
+
+        // 处理特殊参数
+        if (params.closePosition === 'true') {
+            // 当使用closePosition时，不需要quantity参数
+            delete params.quantity;
+        }
+
+        return this._sendRequest('POST', '/fapi/v1/algoOrder', params, true);
+    }
+
     // 市价单
     async placeMarketOrder(symbol, side, quantity, reduceOnly = false) {
         const params = {
