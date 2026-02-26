@@ -19,6 +19,7 @@ export const postRecommendData = async (req, res) => {
         })
         const todayFunds = await FundFlowModel.find({
             symbol: {$in: todaySymbol},
+            dateTime: Number(hour),
             date: moment().subtract(1, 'days').format('YYYY-MM-DD')
         }).lean()
         const todayTotalFunds = todayFunds.map(obj => ({
