@@ -157,3 +157,51 @@ export const updateProtectionStopLoss = async (req, res) => {
         return res.status(500).json({success: false, message: '更新保护止损单出错', error: e.message});
     }
 }
+
+/**
+ * 获取 Binance 交易所的持仓信息
+ * @param {Object} userOptions - 用户配置
+ * @returns {Promise<Array>} 持仓信息列表
+ */
+export const getBinancePositions = async (userOptions) => {
+    try {
+        console.log(`获取用户 ${userOptions.userId} 的 Binance 交易所持仓信息`);
+        
+        // 1. 初始化 API 客户端
+        const {apiKey, apiSecret, isTestOption} = userOptions
+        const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
+        
+        // 2. 获取所有持仓
+        const accountInfo = await trader.client.getAccountInfo();
+        const positions = accountInfo.positions;
+        
+        // 3. 处理持仓数据
+        const positionList = positions.filter(position => {
+            // 只返回有持仓的记录
+            return Number(position.positionAmt) !== 0;
+        }).map(position => {
+            // 提取交易对符号（去除 USDT 后缀）
+            const symbol = position.symbol.replace('USDT', '');
+            
+            // 确定交易方向
+            const direction = Number(position.positionAmt) > 0 ? 'buy' : 'sell';
+            
+            return {
+                symbol,
+                direction,
+                price: position.avgPrice, // 平均入场价格
+                size: Math.abs(Number(position.positionAmt)), // 持仓数量（取绝对值）
+                exchange: 'binance',
+                unrealisedPnl: position.unRealizedProfit, // 未实现盈亏
+                leverage: position.leverage, // 杠杆
+                markPrice: position.markPrice // 标记价格
+            };
+        });
+        
+        console.log(`用户 ${userOptions.userId} 的 Binance 交易所持仓信息:`, positionList);
+        return positionList;
+    } catch (error) {
+        console.error(`获取 Binance 交易所持仓信息出错:`, error);
+        return [];
+    }
+};
