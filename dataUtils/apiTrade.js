@@ -59,3 +59,35 @@ export const updateProtectionStopLoss = async (userOption, symbol, direction, pr
         return {success: false, message: '更新保护止损单出错', error: error.message};
     }
 }
+
+/**
+ * 获取用户的持仓信息
+ * @param {Object} userOption - 用户配置
+ * @returns {Promise<Array>} 持仓信息列表
+ */
+export const getUserPositions = async (userOption) => {
+    try {
+        console.log(`获取用户 ${userOption.userId} 的持仓信息`);
+        
+        const {belong} = userOption;
+        
+        switch (belong) {
+            case 'Gate':
+                console.log('调用 Gate 交易所的持仓信息获取');
+                // 导入 Gate 交易所的获取持仓函数
+                const {getGatePositions} = await import('./gateTrade');
+                return await getGatePositions(userOption);
+            case 'Binance':
+                console.log('调用 Binance 交易所的持仓信息获取');
+                // 导入 Binance 交易所的获取持仓函数
+                const {getBinancePositions} = await import('./binanceTrade');
+                return await getBinancePositions(userOption);
+            default:
+                console.error('不支持的交易所:', belong);
+                return [];
+        }
+    } catch (error) {
+        console.error('获取用户持仓信息出错:', error);
+        return [];
+    }
+};
