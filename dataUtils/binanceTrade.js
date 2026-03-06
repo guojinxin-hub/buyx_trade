@@ -173,13 +173,27 @@ export const getBinancePositions = async (userOptions) => {
         
         // 2. 获取所有持仓
         const accountInfo = await trader.client.getAccountInfo();
+        console.log(`获取到账户信息:`, JSON.stringify(accountInfo, null, 2));
+        
+        // 检查 positions 字段
+        if (!accountInfo.positions || !Array.isArray(accountInfo.positions)) {
+            console.error(`账户信息中没有有效的 positions 字段`);
+            return [];
+        }
+        
         const positions = accountInfo.positions;
+        console.log(`获取到 ${positions.length} 个持仓记录`);
         
         // 3. 处理持仓数据
         const positionList = positions.filter(position => {
             // 只返回有持仓的记录
-            return Number(position.positionAmt) !== 0;
+            const positionAmt = Number(position.positionAmt);
+            const hasPosition = positionAmt !== 0;
+            console.log(`检查持仓 ${position.symbol}: positionAmt=${position.positionAmt}, hasPosition=${hasPosition}`);
+            return hasPosition;
         }).map(position => {
+            console.log(`处理持仓 ${position.symbol}:`, JSON.stringify(position, null, 2));
+            
             // 提取交易对符号（去除 USDT 后缀）
             const symbol = position.symbol.replace('USDT', '');
             
@@ -189,12 +203,12 @@ export const getBinancePositions = async (userOptions) => {
             return {
                 symbol,
                 direction,
-                price: position.avgPrice, // 平均入场价格
+                price: position.entryPrice || position.avgPrice, // 平均入场价格
                 size: Math.abs(Number(position.positionAmt)), // 持仓数量（取绝对值）
                 exchange: 'binance',
-                unrealisedPnl: position.unRealizedProfit, // 未实现盈亏
+                unrealisedPnl: position.unRealizedProfit || position.unrealizedProfit || position.pnl, // 未实现盈亏（尝试不同字段名）
                 leverage: position.leverage, // 杠杆
-                markPrice: position.markPrice // 标记价格
+                markPrice: position.markPrice || position.markPrice // 标记价格
             };
         });
         
