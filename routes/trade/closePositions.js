@@ -11,6 +11,7 @@ export const closePositions = async (req, res) => {
         const options = await UserTradeOptionsModel.find({
             isActive: true,
             isDelete: false,
+            isClosePositionEnabled: true,
         }).lean();
         
         if (isEmpty(options)) {
