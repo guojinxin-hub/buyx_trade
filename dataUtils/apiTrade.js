@@ -1,6 +1,6 @@
 import {gateTrade, updateProtectionStopLoss as updateGateProtectionStopLoss} from "./gateTrade";
 import {binanceTrade, updateProtectionStopLoss as updateBinanceProtectionStopLoss} from "./binanceTrade";
-import {UserTradeOptionsModel} from "buydip_scheme/scheme/userTradeOptions";
+import {okxTrade} from "./okxTrade";
 
 export const apiTrade = async ({tradeData, userOptions}) => {
     const {belong} = userOptions
@@ -11,6 +11,9 @@ export const apiTrade = async ({tradeData, userOptions}) => {
         case 'Binance':
             await binanceTrade({tradeData, userOptions})
             break;
+        case 'OKX':
+            await okxTrade({tradeData, userOptions})
+            break;
         default:
             break;
     }
@@ -19,10 +22,10 @@ export const apiTrade = async ({tradeData, userOptions}) => {
 export const updateProtectionStopLoss = async (userOption, symbol, direction, protectionPrice, exchange) => {
     try {
         console.log(`更新保护止损单: 用户 ${userOption.userId}, 交易对 ${symbol}, 方向 ${direction}, 价格 ${protectionPrice}, 交易所 ${exchange}`);
-        
+
         // 这里可以根据需要添加具体的实现逻辑
         // 例如，直接调用对应的交易所实现
-        
+
         // 创建模拟的req和res对象
         const req = {
             body: {
@@ -32,7 +35,7 @@ export const updateProtectionStopLoss = async (userOption, symbol, direction, pr
                 protectionPrice
             }
         };
-        
+
         const res = {
             status: (code) => {
                 return {
@@ -43,7 +46,7 @@ export const updateProtectionStopLoss = async (userOption, symbol, direction, pr
                 };
             }
         };
-        
+
         switch (exchange) {
             case 'gate':
                 console.log('调用 Gate 交易所的保护止损更新');
@@ -68,9 +71,9 @@ export const updateProtectionStopLoss = async (userOption, symbol, direction, pr
 export const getUserPositions = async (userOption) => {
     try {
         console.log(`获取用户 ${userOption.userId} 的持仓信息`);
-        
+
         const {belong} = userOption;
-        
+
         switch (belong) {
             case 'Gate':
                 console.log('调用 Gate 交易所的持仓信息获取');
