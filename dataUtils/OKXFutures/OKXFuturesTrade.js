@@ -1,72 +1,36 @@
-const OKXFuturesClient = require('./OKXFuturesClient');
+const {OKXClient} = require('./OKXFuturesClient');
 
 class OKXFuturesTrader {
-    constructor(apiKey, apiSecret, passphrase, isDemo = false) {
-        this.client = new OKXFuturesClient(apiKey, apiSecret, passphrase, isDemo);
-        this.symbolCache = new Map();
+    constructor({apiKey, secretKey, passphrase, isSimulated = false}) {
+        console.log("apiKey", {apiKey, secretKey, passphrase, isSimulated})
+        this.client = new OKXClient({apiKey, secretKey, passphrase, isSimulated});
     }
 
     async getSymbolsInfo() {
         try {
-            const instruments = await this.client.getInstruments();
+            const instruments = await this.client.getCurrencyInfo();
             if (!instruments) {
                 throw new Error(`获取币种信息出错`);
             }
             return instruments
         } catch (error) {
+            throw new Error(`获取币种信息出错 ${error.message}`);
             return []
         }
     }
 
-    /**
-     * 获取并缓存交易对信息
-     */
-    async getSymbolInfo() {
-        try {
-            const instrument = await this.client.getInstruments();
-            if (!instrument) {
-                throw new Error(`查询出错`);
-            }
-            return instrument;
-        } catch (error) {
-            console.error('获取交易对信息失败:', error.message);
-            throw error;
-        }
-    }
-
-    /**
-     * 计算精度位数
-     */
-    calculatePrecision(value) {
-        if (value === 0) return 0;
-        const str = value.toString();
-        if (str.includes('e-')) {
-            return parseInt(str.split('e-')[1]);
-        }
-        if (str.includes('.')) {
-            return str.split('.')[1].length || 0;
-        }
-        return 0;
-    }
-
-    /**
-     * 格式化数值到指定精度
-     */
-    formatToPrecision(value, precision) {
-        return parseFloat(value.toFixed(precision));
-    }
 
     /**
      * 检查保证金是否充足
      */
     async checkMargin(instId, usdtAmount, minMargin = 0) {
         try {
-            const balance = await this.client.getBalance('USDT');
+            const balance = await this.client.getAccountBalance();
             if (!balance) {
                 throw new Error('无法获取账户余额');
             }
 
-            const availableBalance = parseFloat(balance.details[0].availBal);
+            const availableBalance = parseFloat(balance.available);
 
             // 检查最小保证金要求
             if (availableBalance < minMargin) {
@@ -87,9 +51,66 @@ class OKXFuturesTrader {
     }
 
     /**
+     * 格式化价格到 tickSz 指定的精度
+     * @param {number} price - 原始价格
+     * @param {string|number} tickSz - 价格精度 (如 '0.01', '0.1', '0.001')
+     * @param {string} rounding - 舍入方式: 'round'(四舍五入), 'floor'(向下), 'ceil'(向上)
+     * @returns {number} 格式化后的价格
+     */
+    formatToPrecision(price, tickSz, rounding = 'round') {
+        if (!price || !tickSz) return price;
+
+        const tickSize = parseFloat(tickSz);
+        if (tickSize === 0) return price;
+
+        // 根据舍入方式计算
+        let formatted;
+        switch (rounding) {
+            case 'floor': // 向下取整（保守）
+                formatted = Math.floor(price / tickSize) * tickSize;
+                break;
+            case 'ceil': // 向上取整
+                formatted = Math.ceil(price / tickSize) * tickSize;
+                break;
+            case 'round': // 四舍五入（默认）
+            default:
+                formatted = Math.round(price / tickSize) * tickSize;
+        }
+
+        // 计算需要保留的小数位数
+        const decimals = this._getTickDecimals(tickSize);
+
+        // 修复浮点数精度问题
+        return parseFloat(formatted.toFixed(decimals));
+    }
+
+    /**
+     * 获取 tickSize 的小数位数
+     * @private
+     */
+    _getTickDecimals(tickSize) {
+        if (tickSize === 0) return 0;
+
+        const str = tickSize.toString();
+
+        // 处理科学计数法 (如 1e-8)
+        if (str.includes('e-')) {
+            return parseInt(str.split('e-')[1]);
+        }
+
+        // 处理小数点
+        if (str.includes('.')) {
+            return str.split('.')[1].length;
+        }
+
+        // 整数情况 (如 1, 10, 100)
+        return 0;
+    }
+
+    /**
      * 计算交易数量
      */
-    async calculateQuantity(symbolInfo, lastPrice, usdtAmount, leverage = 1) {
+    calculateQuantity({symbolInfo, lastPrice, usdtAmount, leverage = 1}) {
         try {
             // 获取合约面值
             const ctVal = parseFloat(symbolInfo.ctVal);
@@ -123,7 +144,7 @@ class OKXFuturesTrader {
                 throw new Error(`计算出的张数 ${quantity} 小于最小交易数量 ${minSz}`);
             }
 
-            return quantity;
+            return parseFloat(quantity);
 
         } catch (error) {
             console.error('计算数量失败:', error.message);
@@ -173,17 +194,34 @@ class OKXFuturesTrader {
         return adjustedQuantity;
     }
 
+    async getPositionMode() {
+        try {
+            return await this.client.getPositionMode();
+        } catch (e) {
+            throw new Error(e.message)
+        }
+    }
+
+    async setPositionMode() {
+        try {
+            await this.client.setPositionMode();
+        } catch (e) {
+            throw new Error(e.message)
+        }
+    }
+
     /**
      * 获取当前持仓
      */
     async getCurrentPosition(instId) {
         try {
-            const position = await this.client.getPosition(instId);
+            const positions = await this.client.getPositions(instId);
+            const position = positions.find((p) => p.instId === instId && p.ccy === 'USDT')
             if (position && parseFloat(position.pos) !== 0) {
                 return {
                     instId: position.instId,
                     pos: parseFloat(position.pos),
-                    posSide: position.posSide || (parseFloat(position.pos) > 0 ? 'long' : 'short'),
+                    posSide: position.posSide || (parseFloat(position.pos) > 0 ? 'buy' : 'sell'),
                     avgPx: parseFloat(position.avgPx),
                     lever: parseFloat(position.lever),
                     upl: parseFloat(position.upl),
@@ -202,7 +240,7 @@ class OKXFuturesTrader {
      */
     async closePosition(instId) {
         try {
-            const position = await this.getCurrentPosition(instId);
+            const position = await this.client.closePosition(instId);
             if (!position) {
                 console.log('没有持仓需要平仓');
                 return null;
@@ -217,61 +255,6 @@ class OKXFuturesTrader {
         } catch (error) {
             console.error('平仓失败:', error.message);
             throw error;
-        }
-    }
-
-    /**
-     * 设置止盈止损
-     */
-    async setTakeProfitAndStopLoss(instId, entryPrice, quantity, takeProfitPercent, stopLossPercent, direction) {
-        try {
-            const results = {};
-            const symbolInfo = await this.getSymbolInfo(instId);
-
-            // 计算止盈止损价格
-            let takeProfitPrice, stopLossPrice;
-
-            if (direction.toLowerCase() === 'buy') {
-                takeProfitPrice = entryPrice * (1 + takeProfitPercent / 100);
-                stopLossPrice = entryPrice * (1 - stopLossPercent / 100);
-            } else {
-                takeProfitPrice = entryPrice * (1 - takeProfitPercent / 100);
-                stopLossPrice = entryPrice * (1 + stopLossPercent / 100);
-            }
-
-            // 格式化价格到正确精度
-            takeProfitPrice = this.formatToPrecision(takeProfitPrice, symbolInfo.pricePrecision);
-            stopLossPrice = this.formatToPrecision(stopLossPrice, symbolInfo.pricePrecision);
-
-            const closeSide = direction.toLowerCase() === 'buy' ? 'sell' : 'buy';
-
-            // 设置止盈单
-            if (takeProfitPercent > 0) {
-                results.takeProfit = await this.client.placeTakeProfitOrder(
-                    instId,
-                    closeSide,
-                    quantity,
-                    takeProfitPrice
-                );
-                console.log(`止盈单设置: ${takeProfitPrice}`);
-            }
-
-            // 设置止损单
-            if (stopLossPercent > 0) {
-                results.stopLoss = await this.client.placeStopMarketOrder(
-                    instId,
-                    closeSide,
-                    quantity,
-                    stopLossPrice
-                );
-                console.log(`止损单设置: ${stopLossPrice}`);
-            }
-
-            return results;
-        } catch (error) {
-            console.error('设置止盈止损失败:', error.message);
-            console.log('止盈止损设置失败，但交易已成功');
-            return {};
         }
     }
 
@@ -292,90 +275,90 @@ class OKXFuturesTrader {
 
         try {
             console.log(`开始执行交易: ${instId}, 方向: ${direction}, 金额: ${usdtAmount} USDT, 杠杆: ${leverage}x`);
-
             // 1. 检查保证金
             await this.checkMargin(instId, usdtAmount, minMargin);
-
+            await new Promise(resolve => setTimeout(resolve, 100));
             // 2. 设置杠杆倍数
             await this.client.setLeverage(instId, leverage);
             console.log(`设置杠杆: ${leverage}x`);
+            await new Promise(resolve => setTimeout(resolve, 100));
 
-            await this.client.setLeverageMode(instId, leverage, 'cross')
+
+            // 获取当前市价单价格，并且计算止盈止损价格，根据价格获取张数
             // 3. 获取当前价格和计算数量
             const ticker = await this.client.getTicker(instId);
             const currentPrice = parseFloat(ticker.last);
-            const quantity = await this.calculateQuantity(symbolInfo, currentPrice, usdtAmount, leverage);
 
-            if (quantity <= 0) {
-                throw new Error(`计算出的交易数量 ${quantity} 无效`);
+            // 计算止盈止损价格
+            let takeProfitPrice, stopLossPrice;
+
+            if (direction.toLowerCase() === 'buy') {
+                takeProfitPrice = currentPrice * (1 + takeProfitPercent / 100);
+                stopLossPrice = currentPrice * (1 - stopLossPercent / 100);
+            } else {
+                takeProfitPrice = currentPrice * (1 - takeProfitPercent / 100);
+                stopLossPrice = currentPrice * (1 + stopLossPercent / 100);
             }
 
-            console.log(`当前价格: ${currentPrice}, 计算数量: ${quantity}`);
+            // 格式化价格到正确精度
+            console.log(`当前价格 ${currentPrice} 止盈价格: ${takeProfitPrice}, 止损价格: ${stopLossPrice} 方向：${direction} ,USDT: ${usdtAmount}`);
+            const size = this.calculateQuantity({symbolInfo, lastPrice: currentPrice, usdtAmount, leverage})
 
-            // 5. 检查当前持仓并平仓（如果需要）
             const currentPosition = await this.getCurrentPosition(instId);
             if (currentPosition) {
-                const currentDirection = currentPosition.posSide;
+                const currentDirection = currentPosition.pos > 0 ? "buy" : "sell";
                 if ((currentDirection === 'buy' && direction === 'sell') ||
                     (currentDirection === 'sell' && direction === 'buy')) {
                     console.log(`发现反向持仓，先平仓: ${currentDirection}`);
-                    await this.closePosition(instId);
+                    await this.client.closePosition(currentPosition);
                     // 等待平仓完成
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await this.client.placeOrderWithUsdt({
+                        instId,
+                        side: direction,
+                        size: size, // 100 USDT
+                        attachAlgoOrds: {
+                            tpOrdPx: takeProfitPrice, // 止盈价
+                            slTriggerPx: stopLossPrice, // 止损触发价
+                            slOrdPx: -1, // -1表示市价止损
+                            slTriggerPxType: 'last', // 最新价触发
+                            tpOrdKind: "limit"
+                        }
+                    });
+                } else if (currentPosition.pos > 0 && direction === "buy" || currentPosition.pos < 0 && direction === "sell") {
+                    // 盈利加仓
+                    if (currentPosition.upl > 0) {
+                        const order = await this.client.placeOrderWithUsdt({
+                            instId,
+                            side: direction,
+                            size: size, // 100 USDT
+                            attachAlgoOrds: {
+                                tpOrdPx: takeProfitPrice, // 止盈价
+                                slTriggerPx: stopLossPrice, // 止损触发价
+                                slOrdPx: -1, // -1表示市价止损
+                                slTriggerPxType: 'last', // 最新价触发
+                                tpOrdKind: "limit"
+                            }
+                        });
+                    }
                 }
-            }
-
-            const positionMode = await this.client.getPositionMode(instId);
-
-            if (positionMode === "net_mode") {
-                await this.client.setPositionMode("long_short_mode", instId);
-            }
-            // 6. 执行市价单
-            const orderResult = await this.client.placeMarketOrder(instId, direction, quantity);
-            console.log('下单成功:', orderResult);
-            return
-            // 7. 获取成交信息
-            let filledPrice = currentPrice;
-            let filledQuantity = quantity;
-
-            if (orderResult.ordId) {
-                // 等待订单完全成交
-                await new Promise(resolve => setTimeout(resolve, 2000));
-
-                // 获取订单详情
-                const orderInfo = await this.client.getOrder(instId, orderResult.ordId);
-                if (orderInfo.avgPx) {
-                    filledPrice = parseFloat(orderInfo.avgPx);
-                }
-                if (orderInfo.accFillSz) {
-                    filledQuantity = parseFloat(orderInfo.accFillSz);
-                }
-
-                console.log(`订单详情: 均价=${filledPrice}, 数量=${filledQuantity}, 状态=${orderInfo.state}`);
-            }
-
-            // 8. 设置止盈止损
-            if (takeProfitPercent > 0 || stopLossPercent > 0) {
-                const tpSlResults = await this.setTakeProfitAndStopLoss(
+            } else {
+                const order = await this.client.placeOrderWithUsdt({
                     instId,
-                    filledPrice,
-                    filledQuantity,
-                    takeProfitPercent,
-                    stopLossPercent,
-                    direction
-                );
-                console.log('止盈止损已设置');
+                    side: direction,
+                    size: size, // 100 USDT
+                    attachAlgoOrds: {
+                        tpOrdPx: takeProfitPrice, // 止盈价
+                        slTriggerPx: stopLossPrice, // 止损触发价
+                        slOrdPx: -1, // -1表示市价止损
+                        slTriggerPxType: 'last', // 最新价触发
+                        tpOrdKind: "limit"
+                    }
+                });
             }
-
             return {
                 success: true,
-                order: orderResult,
-                filledPrice,
-                filledQuantity,
-                direction,
-                leverage
             };
-
         } catch (error) {
             console.error('交易执行失败:', error.message);
             return {
@@ -404,14 +387,11 @@ class OKXFuturesTrader {
      */
     async getAccountInfo() {
         try {
-            const balance = await this.client.getBalance();
+            const balance = await this.client.getAccountBalance();
             const positions = await this.client.getPositions();
 
             return {
-                balance: {
-                    totalEq: parseFloat(balance.totalEq),
-                    availBal: parseFloat(balance.availBal)
-                },
+                balance: balance,
                 positions: positions.map(pos => ({
                     instId: pos.instId,
                     pos: parseFloat(pos.pos),
