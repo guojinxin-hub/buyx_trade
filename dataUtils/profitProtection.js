@@ -255,8 +255,8 @@ const handleUserProfitProtection = async (userOption, priceMap) => {
 
             logger.info(`用户 ${userOption.userId} 的 ${symbol} 交易记录盈利 ${profitPercentage.toFixed(2)}%`);
 
-            // 从用户配置中获取盈利保护触发阈值，默认为10%
-            const profitProtectionThreshold = userOption?.profitProtectionThreshold || 10;
+            // 从用户配置中获取盈利保护触发阈值，默认为5%
+            const profitProtectionThreshold = 5;
 
             // 如果盈利超过触发阈值，计算保护止损价格并设置
             if (profitPercentage >= profitProtectionThreshold) {
