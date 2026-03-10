@@ -19,6 +19,7 @@ export const testAPI = async (req, res) => {
             isDelete: false,
             belong: "OKX"
         }).lean()
+        console.log("options",options)
         for (const option of options) {
             if (!isEmpty(option)) {
                 await apiTrade({userOptions: option, tradeData: [{symbol: "ETH", direction: "sell"}]})
