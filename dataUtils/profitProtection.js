@@ -1,4 +1,4 @@
-import { UserTradeOptionsModel, TradeRecordModel, CoinPriceModel } from "buydip_scheme";
+import { UserTradeOptionsModel } from "buydip_scheme";
 import { updateProtectionStopLoss, getUserPositions } from "./apiTrade";
 
 /**
@@ -98,67 +98,11 @@ const isValidPrice = (price) => {
 };
 
 /**
- * 处理单个交易记录的盈利保护
- * @param {Object} userOption - 用户配置
- * @param {Object} record - 交易记录
- * @param {number} currentPrice - 当前价格
- * @returns {Promise<boolean>} 是否成功更新止损单
- */
-const handleSingleTradeRecord = async (userOption, record, currentPrice) => {
-    try {
-        const symbol = record.symbol;
-        const entryPrice = parseFloat(record.price);
-        const direction = record.direction;
-        const exchange = record.exchange;
-
-        // 计算盈利比例
-        const profitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
-
-        logger.info(`用户 ${userOption.userId} 的 ${symbol} 交易记录盈利 ${profitPercentage.toFixed(2)}%`);
-
-        // 从用户配置中获取盈利保护触发阈值，默认为10%
-        const profitProtectionThreshold = userOption?.profitProtectionThreshold || 10;
-
-        // 如果盈利超过触发阈值，计算保护止损价格并设置
-        if (profitPercentage >= profitProtectionThreshold) {
-            const protectionPrice = calculateProtectionPrice(entryPrice, direction, userOption);
-            logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${profitPercentage.toFixed(2)}%，达到触发阈值 ${profitProtectionThreshold}%，设置保护止损价格为 ${protectionPrice.toFixed(4)}`);
-
-            // 调用盈利保护服务更新止损单，使用重试机制
-            const result = await retryAsync(
-                () => updateProtectionStopLoss(userOption, symbol, direction, protectionPrice, exchange),
-                3, // 最大重试3次
-                1500 // 每次重试间隔1500ms
-            );
-            if (result.success) {
-                logger.info(`用户 ${userOption.userId} 的 ${symbol} 保护止损单更新成功`);
-
-                // 保存保护价格到记录对象，以便后续更新其他记录使用
-                record.protectionPrice = protectionPrice;
-                record.profitProtectionThreshold = profitProtectionThreshold;
-
-                return true;
-            } else {
-                logger.error(`用户 ${userOption.userId} 的 ${symbol} 保护止损单更新失败: ${result.message}`);
-            }
-        } else {
-            logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${profitPercentage.toFixed(2)}%，未达到触发阈值 ${profitProtectionThreshold}%，跳过`);
-        }
-
-        return false;
-    } catch (error) {
-        logger.error(`处理单个交易记录时出错:`, error);
-        return false;
-    }
-};
-
-/**
  * 处理单个用户的盈利保护
  * @param {Object} userOption - 用户配置
- * @param {Object} priceMap - 价格映射
  * @returns {Promise<Object>} 处理结果
  */
-const handleUserProfitProtection = async (userOption, priceMap) => {
+const handleUserProfitProtection = async (userOption) => {
     try {
         // 验证用户配置
         if (!userOption || !userOption.userId) {
@@ -167,23 +111,6 @@ const handleUserProfitProtection = async (userOption, priceMap) => {
         }
 
         logger.info(`开始处理用户 ${userOption.userId} 的盈利保护`);
-
-        // 查询用户的所有未平仓交易记录，使用重试机制
-        const tradeRecords = await retryAsync(
-            () => TradeRecordModel.find({
-                userId: userOption.userId,
-                status: 'pending'
-            }).sort({ createdAt: -1 }),
-            2, // 最大重试2次
-            1000 // 每次重试间隔1000ms
-        );
-
-        if (tradeRecords.length === 0) {
-            logger.info(`用户 ${userOption.userId} 没有待处理的交易记录`);
-            return { success: true, message: '没有待处理的交易记录', updatedCount: 0 };
-        }
-
-        logger.info(`用户 ${userOption.userId} 有 ${tradeRecords.length} 条未平仓交易记录`);
 
         // 从 API 获取用户的最新持仓信息，使用重试机制
         const positions = await retryAsync(
@@ -199,14 +126,8 @@ const handleUserProfitProtection = async (userOption, priceMap) => {
 
         logger.info(`用户 ${userOption.userId} 有 ${positions.length} 个持仓`);
 
-        // 按币种分组处理持仓
-        const positionMap = {};
-        for (const position of positions) {
-            const key = `${position.symbol}_${position.direction}`;
-            if (!positionMap[key]) {
-                positionMap[key] = position;
-            }
-        }
+        // 从用户配置中获取盈利保护触发阈值，默认为5%
+        const profitProtectionThreshold = userOption?.profitProtectionThreshold || 5;
 
         // 处理结果
         const result = {
@@ -216,52 +137,58 @@ const handleUserProfitProtection = async (userOption, priceMap) => {
             symbols: []
         };
 
-        // 对每个交易记录计算盈利并设置保护止损
-        for (const record of tradeRecords) {
-            const { symbol, direction, exchange } = record;
+        // 对每个持仓处理盈利保护
+        for (const position of positions) {
+            const { symbol, direction, exchange = 'binance' } = position;
             
-            // 从价格映射中获取当前价格
-            const currentPriceStr = priceMap[symbol];
-            if (!isValidPrice(currentPriceStr)) {
-                logger.info(`无法获取 ${symbol} 的有效价格，跳过`);
-                continue;
-            }
-
-            const currentPrice = parseFloat(currentPriceStr);
+            // 支持多种字段名称
+            const entryPrice = position.entryPrice || position.price || position.avgPrice;
+            const profitData = position.profitPercentage || position.unrealisedPnl || position.pnl;
             
-            // 查找对应的持仓信息
-            const positionKey = `${symbol}_${direction}`;
-            const position = positionMap[positionKey];
-            
-            if (!position) {
-                logger.info(`用户 ${userOption.userId} 的 ${symbol} 交易记录没有对应的持仓信息，可能已手动清仓，将状态更新为 cancelled`);
-                // 更新交易记录状态为 cancelled
-                try {
-                    await TradeRecordModel.findByIdAndUpdate(record._id, {
-                        status: 'cancelled'
-                    });
-                    logger.info(`用户 ${userOption.userId} 的 ${symbol} 交易记录状态更新为 cancelled`);
-                    result.updatedCount++;
-                } catch (error) {
-                    logger.error(`更新交易记录状态出错:`, error);
-                }
+            // 验证必要字段
+            if (!symbol || !direction) {
+                logger.warn(`持仓数据缺少基本信息，跳过: ${JSON.stringify(position)}`);
                 continue;
             }
 
             // 计算盈利比例
-            // 检查持仓价格是否有效，如果无效则使用交易记录中的入场价格
-            const entryPrice = isValidPrice(position.price) ? parseFloat(position.price) : parseFloat(record.price);
-            const profitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
+            let actualProfitPercentage = 0;
+            let hasValidProfit = false;
+            
+            if (profitData !== undefined) {
+                // 尝试解析盈利数据
+                const profitValue = parseFloat(profitData);
+                if (!isNaN(profitValue)) {
+                    // 判断是否盈利：无论买入还是卖出，正值都表示盈利，负值表示亏损
+                    if (profitValue > 0) {
+                        hasValidProfit = true;
+                        // 直接使用unrealisedPnl作为百分比
+                        actualProfitPercentage = profitValue;
+                    } else {
+                        // 亏损，跳过
+                        logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓亏损 ${Math.abs(profitValue).toFixed(2)}，跳过`);
+                        continue;
+                    }
+                    logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (从unrealisedPnl获取)`);
+                }
+            }
 
-            logger.info(`用户 ${userOption.userId} 的 ${symbol} 交易记录盈利 ${profitPercentage.toFixed(2)}%`);
+            // 如果没有有效盈利数据，跳过
+            if (!hasValidProfit) {
+                logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓未盈利，跳过`);
+                continue;
+            }
 
-            // 从用户配置中获取盈利保护触发阈值，默认为5%
-            const profitProtectionThreshold = 5;
+            // 确保有入场价格用于计算保护止损
+            if (!isValidPrice(entryPrice)) {
+                logger.warn(`持仓数据缺少入场价格，跳过: ${JSON.stringify(position)}`);
+                continue;
+            }
 
-            // 如果盈利超过触发阈值，计算保护止损价格并设置
-            if (profitPercentage >= profitProtectionThreshold) {
-                const protectionPrice = calculateProtectionPrice(parseFloat(position.price), direction, userOption);
-                logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${profitPercentage.toFixed(2)}%，达到触发阈值 ${profitProtectionThreshold}%，设置保护止损价格为 ${protectionPrice.toFixed(4)}`);
+            // 如果盈利超过触发阈值，设置保护止损
+            if (actualProfitPercentage >= profitProtectionThreshold) {
+                const protectionPrice = calculateProtectionPrice(parseFloat(entryPrice), direction, userOption);
+                logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${actualProfitPercentage.toFixed(2)}%，达到触发阈值 ${profitProtectionThreshold}%，设置保护止损价格为 ${protectionPrice.toFixed(4)}`);
 
                 // 调用盈利保护服务更新止损单，使用重试机制
                 const updateResult = await retryAsync(
@@ -271,26 +198,17 @@ const handleUserProfitProtection = async (userOption, priceMap) => {
                 );
                 if (updateResult.success) {
                     logger.info(`用户 ${userOption.userId} 的 ${symbol} 保护止损单更新成功`);
-                    
-                    // 盈利保护成功，交易已平仓，更新交易记录状态为 completed
-                    try {
-                        await TradeRecordModel.findByIdAndUpdate(record._id, {
-                            status: 'completed'
-                        });
-                        logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利保护成功，交易已平仓，状态更新为 completed`);
-                        result.updatedCount++;
-                    } catch (error) {
-                        logger.error(`更新交易记录状态出错:`, error);
-                    }
+                    result.updatedCount++;
+                    result.symbols.push(symbol);
                 } else {
                     logger.error(`用户 ${userOption.userId} 的 ${symbol} 保护止损单更新失败: ${updateResult.message}`);
                 }
             } else {
-                logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${profitPercentage.toFixed(2)}%，未达到触发阈值 ${profitProtectionThreshold}%，跳过`);
+                logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${actualProfitPercentage.toFixed(2)}%，未达到触发阈值 ${profitProtectionThreshold}%，跳过`);
             }
         }
         
-        logger.info(`用户 ${userOption.userId} 的盈利保护处理完成`);
+        logger.info(`用户 ${userOption.userId} 的盈利保护处理完成，更新了 ${result.updatedCount} 个止损单`);
         return result;
     } catch (error) {
         logger.error(`处理用户 ${userOption.userId} 的盈利保护时出错:`, error);
@@ -300,57 +218,47 @@ const handleUserProfitProtection = async (userOption, priceMap) => {
 
 /**
  * 处理盈利保护
- * @param {Object} options - 选项参数
- * @param {string} options.userId - 用户ID（可选，如果提供则只处理该用户）
- * @param {Array<string>} options.symbols - 交易对列表（可选，如果提供则只处理这些交易对）
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
  * @returns {Promise<Object>} 处理结果
+ * 
+ * 自动模式：从外部API获取用户持仓信息（包含价格和盈利数据），不需要查询数据库价格
  */
 export const handleProfitProtection = async (req, res) => {
     try {
-        logger.info('开始处理盈利保护');
-        // 查询用户配置
-        let usersWithProfitProtection = await retryAsync(
+        logger.info('开始处理盈利保护（自动模式）');
+        
+        // 查询所有开启了盈利保护的用户
+        const usersWithProfitProtection = await retryAsync(
             () => UserTradeOptionsModel.find({
                 isProfitProtectionEnabled: true,
                 isActive: true
             }),
-            2, // 最大重试2次
-            1000 // 每次重试间隔1000ms
+            2,
+            1000
         );
+        
         if (usersWithProfitProtection.length === 0) {
             logger.info('没有开启盈利保护的用户，退出处理');
             return res.status(200).json({ success: true, message: '没有开启盈利保护的用户' });
         }
 
         logger.info(`找到 ${usersWithProfitProtection.length} 个开启了盈利保护的用户`);
-
-        // 3. 从 CoinPriceModel 获取所有交易对的最新价格
-        const coinPriceList = await retryAsync(
-            () => CoinPriceModel.find({}),
-            2, // 最大重试2次
-            1000 // 每次重试间隔1000ms
-        );
-        // 4. 转换为 map 以便快速查找价格
-        const priceMap = {};
-        coinPriceList.forEach(item => {
-            if (isValidPrice(item.lastPrice)) {
-                priceMap[item.symbol] = item.lastPrice;
-            }
-        });
-        logger.info(`获取了 ${Object.keys(priceMap).length} 个交易对的有效价格`);
-        if (Object.keys(priceMap).length === 0) {
-            logger.info('没有有效价格数据，退出处理');
-            return res.status(200).json({ success: true, message: '没有有效价格数据' });
-        }
-        // 5. 对每个用户处理盈利保护
+        
+        // 对每个用户处理盈利保护
         const results = [];
         for (const userOption of usersWithProfitProtection) {
-            const userResult = await handleUserProfitProtection(userOption, priceMap);
+            const userResult = await handleUserProfitProtection(userOption);
             results.push({ userId: userOption.userId, ...userResult });
         }
 
-        logger.info('盈利保护处理完成');
-        return res.status(200).json({ success: true, message: '盈利保护处理完成', data: results });
+        logger.info('盈利保护处理完成（自动模式）');
+        return res.status(200).json({ 
+            success: true, 
+            message: '盈利保护处理完成', 
+            mode: 'auto',
+            data: results 
+        });
     } catch (error) {
         logger.error('处理盈利保护时出错:', error);
         return res.status(500).json({ success: false, message: '处理盈利保护时出错', error: error.message });

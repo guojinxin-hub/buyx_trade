@@ -43,48 +43,42 @@ export const updateProtectionStopLoss = async (req, res) => {
         const formattedPrice = formatPrice(protectionPrice.toString(), findFutureContract.orderPriceRound);
         
         if (Number(formattedPrice) > 0) {
-            // 5. 清除该合约旧的止损条件单，保留止盈条件单
+            // 5. 清除该合约所有的条件单，包括止损和止盈
             try {
-                const priceTriggeredOrder = await futuresApi.listPriceTriggeredOrders(settle, "open", {
-                    contract: `${symbol}_USDT`,
-                });
+                await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`});
                 await new Promise(resolve => setTimeout(resolve, 200));
-                
-                // 过滤出止损条件单
-                const stopLossOrders = priceTriggeredOrder.body.filter(order => {
-                    // 根据订单类型判断是否为止损单
-                    return order.orderType === "close-long-position" || order.orderType === "close-short-position";
-                });
-                
-                if (stopLossOrders.length > 0) {
-                    await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`});
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                }
             } catch (e) {
-                console.log("清除旧止损条件单失败", e);
+                console.log("清除旧条件单失败", e);
             }
             
-            // 6. 创建新的保护止损条件单
-            await futuresApi.createPriceTriggeredOrder(settle, {
-                initial: {
-                    contract: `${symbol}_USDT`,
-                    size: 0, // 0 表示平掉当前所有持仓
-                    price: "0", // 触发后的委托价格，0 表示市价
-                    reduceOnly: true, // 只减仓
-                    close: true,
-                    tif: "ioc",
-                },
-                trigger: {
-                    strategyType: 0, // 策略类型 0
-                    priceType: 0, // 价格类型 0 (标记价格)
-                    price: formattedPrice, // 触发价格
-                    rule: direction === "buy" ? 2 : 1 // 规则: 买入时止损触发规则为 2 (低于), 卖出时为 1 (高于)
-                },
-                orderType: direction === "buy" ? "close-long-position" : "close-short-position", // 订单类型
-            });
+            // 6. 直接市价平仓，锁定盈利
+            try {
+                // 获取当前持仓
+                const position = await futuresApi.getPosition(settle, `${symbol}_USDT`);
+                
+                if (position && position.body.size !== 0) {
+                    // 调整杠杆（确保平仓时杠杆正确）
+                    await futuresApi.updatePositionLeverage(settle, `${symbol}_USDT`, position.body.leverage, {});
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // 下市价平仓单
+                    const closeOrder = await futuresApi.createFuturesOrder(settle, {
+                        contract: `${symbol}_USDT`,
+                        size: position.body.size < 0 ? Math.abs(position.body.size) : -position.body.size,
+                        price: 0,
+                        tif: "ioc",
+                    }, {});
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    console.log(`用户 ${userOptions.userId} 的 ${symbol} 已市价平仓`, closeOrder.body);
+                }
+            } catch (e) {
+                console.log("市价平仓失败", e);
+                throw e;
+            }
             
-            console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);  
-            return res.status(200).json({success: true, message: '保护止损单更新成功'});
+            console.log(`用户 ${userOptions.userId} 的 ${symbol} 盈利保护已执行，市价平仓`);
+            return res.status(200).json({success: true, message: '盈利保护执行成功'});
         }
 
         return res.status(200).json({success: false, message: '保护止损价格无效'});
