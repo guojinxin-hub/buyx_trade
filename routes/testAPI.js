@@ -14,10 +14,20 @@ let client = new GateApi.ApiClient();
 
 export const testAPI = async (req, res) => {
     try {
+        const options = await UserTradeOptionsModel.find({
+            isActive: true,
+            isDelete: false,
+            belong: "OKX"
+        }).lean()
+        for (const option of options) {
+            if (!isEmpty(option)) {
+                await apiTrade({userOptions: option, tradeData: [{symbol: "ETH", direction: "sell"}]})
+            }
+        }
         return formatResponse(res, 200, 0, {}, 'success')
         // testCode()
     } catch (e) {
-       // console.log(e)
+        // console.log(e)
         res.status(500).json({error: e.message});
     }
 }
