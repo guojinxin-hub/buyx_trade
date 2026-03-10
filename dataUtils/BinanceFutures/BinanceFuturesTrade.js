@@ -2,6 +2,24 @@
 const BinanceFuturesClient = require('./BinanceFuturesClient');
 const {formatPrice} = require("../formatPrice");
 
+// 网络请求重试函数
+const retryRequest = async (fn, retries = 3, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await fn();
+        } catch (error) {
+            console.error(`请求失败，第${i + 1}次尝试:`, error.message);
+            if (i === retries - 1) {
+                // 最后一次尝试失败，抛出错误
+                throw error;
+            }
+            // 等待一段时间再重试
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+};
+
+
 class BinanceFuturesTrader {
     constructor(apiKey, apiSecret, isTestnet = false) {
         this.client = new BinanceFuturesClient(apiKey, apiSecret, isTestnet);
@@ -9,7 +27,7 @@ class BinanceFuturesTrader {
 
     async checkUserAccount() {
         try {
-            return await this.client.getAccountInfo();
+            return await retryRequest(() => this.client.getAccountInfo());
         } catch (e) {
             console.error('获取Binance余额失败:', e.message);
             throw e;
@@ -21,7 +39,7 @@ class BinanceFuturesTrader {
      */
     async checkMargin(symbol, usdtAmount, minMargin) {
         try {
-            const accountInfo = await this.client.getAccountInfo();
+            const accountInfo = await retryRequest(() => this.client.getAccountInfo());
             const availableBalance = parseFloat(accountInfo.availableBalance);
 
             // 检查最小保证金要求
@@ -30,7 +48,7 @@ class BinanceFuturesTrader {
             }
 
             // 计算所需保证金
-            const currentPrice = await this.client.getCurrentPrice(symbol);
+            const currentPrice = await retryRequest(() => this.client.getCurrentPrice(symbol));
             const quantity = usdtAmount / currentPrice;
             const requiredMargin = usdtAmount; // 简化计算，实际应考虑杠杆
 
@@ -70,7 +88,7 @@ class BinanceFuturesTrader {
      */
     async getCurrentPosition(symbol) {
         try {
-            const accountInfo = await this.client.getAccountInfo();
+            const accountInfo = await retryRequest(() => this.client.getAccountInfo());
             const position = accountInfo.positions.find(p => p.symbol === symbol);
 
             if (position && parseFloat(position.positionAmt) !== 0) {
@@ -95,7 +113,7 @@ class BinanceFuturesTrader {
      */
     async closePosition(symbol) {
         try {
-            const position = await this.getCurrentPosition(symbol);
+            const position = await retryRequest(() => this.getCurrentPosition(symbol));
 
             if (!position) {
                 console.log('没有持仓需要平仓');
@@ -107,12 +125,12 @@ class BinanceFuturesTrader {
 
             console.log(`平仓: ${side} ${quantity} ${symbol}`);
 
-            return await this.client.placeMarketOrder(
+            return await retryRequest(() => this.client.placeMarketOrder(
                 symbol,
                 side,
                 quantity,
                 true // reduceOnly
-            );
+            ));
         } catch (error) {
             console.error('平仓失败:', error.message);
             throw error;
@@ -155,25 +173,25 @@ class BinanceFuturesTrader {
             const closeSide = direction === 'LONG' ? 'SELL' : 'BUY';
             // 设置止盈单 - 使用正确的订单类型
             if (takeProfitPercent > 0 && Number(takeProfitPrice) > 0) {
-                results.takeProfit = await this.client.placeAlgoOrder(symbol, {
+                results.takeProfit = await retryRequest(() => this.client.placeAlgoOrder(symbol, {
                     side: closeSide,
                     type: 'TAKE_PROFIT_MARKET', // 使用市价止盈
                     quantity: quantity,
                     triggerPrice: Number(takeProfitPrice),
                     closePosition: 'true', // 平仓
-                });
+                }));
                 console.log(`止盈单设置: ${takeProfitPrice}`);
             }
 
             // 设置止损单 - 使用正确的订单类型
             if (stopLossPercent > 0 && Number(stopLossPrice) > 0) {
-                results.stopLoss = await this.client.placeAlgoOrder(symbol, {
+                results.stopLoss = await retryRequest(() => this.client.placeAlgoOrder(symbol, {
                     side: closeSide,
                     type: 'STOP_MARKET', // 使用市价止损
                     quantity: quantity,
                     triggerPrice: Number(stopLossPrice),
                     closePosition: 'true', // 平仓
-                });
+                }));
                 console.log(`止损单设置: ${stopLossPrice}`);
             }
             return results;
@@ -186,14 +204,14 @@ class BinanceFuturesTrader {
     async setupDualPositionMode() {
         try {
             // 获取当前持仓模式
-            const currentMode = await this.client.getPositionMode();
+            const currentMode = await retryRequest(() => this.client.getPositionMode());
             console.log('当前持仓模式:', currentMode);
             if (currentMode.dualSidePosition) {
                 // 设置为单向持仓模式
-                const result = await this.client.setPositionMode(false);
+                const result = await retryRequest(() => this.client.setPositionMode(false));
                 console.log('设置单向持仓模式成功:', result);
                 // 验证设置
-                const newMode = await this.client.getPositionMode();
+                const newMode = await retryRequest(() => this.client.getPositionMode());
                 console.log('新的持仓模式:', newMode);
             }
         } catch (error) {
@@ -229,12 +247,12 @@ class BinanceFuturesTrader {
             await new Promise(resolve => setTimeout(resolve, 50));
 
             // 2. 设置杠杆
-            await this.client.setLeverage(symbol, leverage);
+            await retryRequest(() => this.client.setLeverage(symbol, leverage));
             console.log(`设置杠杆: ${leverage}x`);
             await new Promise(resolve => setTimeout(resolve, 50));
 
             // 3. 获取当前价格和计算数量
-            const currentPrice = await this.client.getCurrentPrice(symbol);
+            const currentPrice = await retryRequest(() => this.client.getCurrentPrice(symbol));
             await new Promise(resolve => setTimeout(resolve, 50));
 
             const quantity = await this.calculateQuantity(symbolInfo, usdtAmount, currentPrice);
@@ -245,7 +263,7 @@ class BinanceFuturesTrader {
                 return
             }
             // 4. 检查当前持仓并平仓（如果需要）
-            const currentPosition = await this.getCurrentPosition(symbol);
+            const currentPosition = await retryRequest(() => this.getCurrentPosition(symbol));
             await new Promise(resolve => setTimeout(resolve, 50));
 
             if (currentPosition) {
@@ -260,7 +278,7 @@ class BinanceFuturesTrader {
 
             // 5. 执行市价单
             const orderSide = direction === 'LONG' ? 'BUY' : 'SELL';
-            const orderResult = await this.client.placeMarketOrder(symbol, orderSide, quantity);
+            const orderResult = await retryRequest(() => this.client.placeMarketOrder(symbol, orderSide, quantity));
             console.log('下单成功:', orderResult);
             await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -322,7 +340,7 @@ class BinanceFuturesTrader {
      */
     async cancelOrders(symbol, type = 'all') {
         try {
-            const openOrders = await this.client._sendRequest('GET', '/fapi/v1/openOrders', {symbol}, true);
+            const openOrders = await retryRequest(() => this.client._sendRequest('GET', '/fapi/v1/openOrders', {symbol}, true));
             let cancelledCount = 0;
 
             for (const order of openOrders) {
@@ -338,7 +356,7 @@ class BinanceFuturesTrader {
                 }
                 
                 if (shouldCancel) {
-                    await this.client.cancelOrder(symbol, order.orderId);
+                    await retryRequest(() => this.client.cancelOrder(symbol, order.orderId));
                     console.log(`已取消订单: ${order.orderId}, 类型: ${order.type}`);
                     cancelledCount++;
                 }
@@ -363,7 +381,7 @@ class BinanceFuturesTrader {
      */
     async getSymbolInfo() {
         try {
-            const exchangeInfo = await this.client._sendRequest('GET', '/fapi/v1/exchangeInfo', {});
+            const exchangeInfo = await retryRequest(() => this.client._sendRequest('GET', '/fapi/v1/exchangeInfo', {}));
             return exchangeInfo.symbols
         } catch (error) {
             console.error('获取交易对信息失败:', error.message);

@@ -51,7 +51,8 @@ class BinanceFuturesClient {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-MBX-APIKEY': this.apiKey
-                }
+                },
+                timeout: 10000 // 添加超时时间
             };
 
             const req = https.request(options, (res) => {
@@ -70,15 +71,23 @@ class BinanceFuturesClient {
                             resolve(parsed);
                         }
                     } catch (error) {
-                        reject(error);
+                        reject(new Error(`Error parsing response: ${error.message}, data: ${data}`));
                     }
                 });
             });
 
             req.on('error', (error) => {
+                console.error(`HTTPS request error: ${error.message}`);
                 reject(error);
             });
 
+            req.on('timeout', () => {
+                console.warn(`Request timeout: ${options.method} ${options.path}`);
+                req.destroy(); // 销毁请求连接
+                reject(new Error('Request timeout'));
+            });
+
+            req.write(''); // 确保发送请求体（即使是空的）
             req.end();
         });
     }

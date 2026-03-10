@@ -12,6 +12,23 @@ let gateClient = new GateApi.ApiClient();
 // Binance API
 const BinanceFuturesTrade = require('./BinanceFutures/BinanceFuturesTrade');
 
+// 网络请求重试函数
+const retryRequest = async (fn, retries = 3, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await fn();
+        } catch (error) {
+            console.error(`请求失败，第${i + 1}次尝试:`, error.message);
+            if (i === retries - 1) {
+                // 最后一次尝试失败，抛出错误
+                throw error;
+            }
+            // 等待一段时间再重试
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+};
+
 /**
  * 为指定用户执行平仓操作
  * @param {Object} params - 参数对象
@@ -61,7 +78,7 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
         const settle = "usdt";
         
         // 获取账户余额
-        const futureAccount = await futuresApi.listFuturesAccounts(settle);
+        const futureAccount = await retryRequest(() => futuresApi.listFuturesAccounts(settle));
         await saveUserBalance(userOptions.userId, futureAccount.body);
         
         // 遍历处理每个交易信号
@@ -73,7 +90,7 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
                 // 获取当前持仓
                 let position = null;
                 try {
-                    position = await futuresApi.getPosition(settle, `${symbol}_USDT`);
+                    position = await retryRequest(() => futuresApi.getPosition(settle, `${symbol}_USDT`));
                 } catch (e) {
                     console.log(`没有 ${symbol} 的仓位`, e);
                     continue;
@@ -84,16 +101,16 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
                     console.log(`执行平仓操作: ${symbol}, 持仓大小: ${position.body.size}`);
                     
                     // 调整杠杆（确保平仓时杠杆正确）
-                    await futuresApi.updatePositionLeverage(settle, `${symbol}_USDT`, position.body.leverage, {});
+                    await retryRequest(() => futuresApi.updatePositionLeverage(settle, `${symbol}_USDT`, position.body.leverage, {}));
                     await new Promise(resolve => setTimeout(resolve, 100));
                     
                     // 下市价平仓单
-                    const closeOrder = await futuresApi.createFuturesOrder(settle, {
+                    const closeOrder = await retryRequest(() => futuresApi.createFuturesOrder(settle, {
                         contract: `${symbol}_USDT`,
                         size: position.body.size < 0 ? Math.abs(position.body.size) : -position.body.size,
                         price: 0,
                         tif: "ioc",
-                    }, {});
+                    }, {}));
                     await new Promise(resolve => setTimeout(resolve, 100));
                     
                     console.log(`平仓操作完成: ${symbol}`, closeOrder.body);
@@ -150,7 +167,7 @@ export const executeBinanceClosePositions = async ({tradeData, userOptions}) => 
         const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
         
         // 获取账户信息
-        const accountInfo = await trader.checkUserAccount();
+        const accountInfo = await retryRequest(() => trader.checkUserAccount());
         const accountFunds = {
             total: accountInfo.totalWalletBalance,
             unrealisedPnl: accountInfo.totalUnrealizedProfit,
@@ -165,7 +182,7 @@ export const executeBinanceClosePositions = async ({tradeData, userOptions}) => 
                 console.log(`执行平仓操作: ${symbol}`);
                 
                 // 执行平仓操作
-                const result = await trader.closePosition(`${symbol}USDT`);
+                const result = await retryRequest(() => trader.closePosition(`${symbol}USDT`));
                 console.log(`平仓结果: ${symbol}`, result);
                 
                 // 更新交易记录状态为已平仓

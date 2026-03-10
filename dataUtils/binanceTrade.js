@@ -41,38 +41,56 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
             await saveUserBalance(userOptions.userId, accountFunds)
             for (const item of futureContractData) {
                 if (direction === 'all' || direction === item.direction) {
-                    // 执行交易
-                    const result = await trader.executeTrade({
-                        symbol: `${item.symbol}USDT`,
-                        usdtAmount: Number(maxVolume),
-                        direction: item.direction === "buy" ? 'LONG' : "SHORT",
-                        leverage: Number(leverage),
-                        minMargin: Number(insurance),
-                        takeProfitPercent: Number(takeProfit), // 止盈
-                        stopLossPercent: Number(stopLoss),// 止损
-                        symbolInfo: item.symbolInfo,
-                    });
-                    console.log('交易结果:', result);
-                    
-                    // 保存交易记录
-                    if (result.success && result.order && result.order.orderId) {
-                        try {
-                            await saveTradeRecord(userOptions.userId, {
-                                symbol: `${item.symbol}`,
-                                price: String(result.filledPrice),
-                                size: String(result.filledQuantity),
-                                direction: item.direction,
-                                exchange: 'binance',
-                                orderId: result.order.orderId.toString(),
-                                leverage: String(leverage),
-                                status: 'pending'  // 先设为待处理状态
-                            });
-                            
-                            console.log(`交易记录保存成功: ${result.order.orderId}`);
-                        } catch (error) {
-                            console.error(`交易记录保存失败: ${error.message}`);
-                            // 继续执行，不因记录保存失败而中断交易流程
+                    try {
+                        const {symbol, direction, symbolInfo} = item
+                        const priceStep = symbolInfo.filters.find(f => f.filterType === 'PRICE_FILTER').tickSize
+                        const qtyStep = symbolInfo.filters.find(f => f.filterType === 'LOT_SIZE').stepSize
+                        const symbolName = `${symbol}USDT`
+                        // 1. 检查当前持仓并平仓（如果需要）
+                        const currentPosition = await trader.getCurrentPosition(symbolName)
+                        if (currentPosition) {
+                            const currentDirection = currentPosition.positionSide
+                            if ((currentDirection === 'LONG' && direction === 'SHORT') ||
+                                (currentDirection === 'SHORT' && direction === 'LONG')) {
+                                console.log(`发现反向持仓，先平仓: ${currentDirection}`)
+                                await trader.closePosition(symbolName)
+                                await new Promise(resolve => setTimeout(resolve, 50))
+                            }
                         }
+                        // 2. 下单
+                        let orderResult
+                        if (direction === 'LONG') {
+                            orderResult = await trader.buy(symbolName, leverage, maxVolume, stopLoss, takeProfit, priceStep, qtyStep)
+                        } else {
+                            orderResult = await trader.sell(symbolName, leverage, maxVolume, stopLoss, takeProfit, priceStep, qtyStep)
+                        }
+                        
+                        console.log('下单成功:', orderResult)
+                        // 3. 保存交易记录
+                        if (orderResult.order && orderResult.order.orderId) {
+                            try {
+                                await saveTradeRecord({
+                                    userId: userOptions.userId,
+                                    symbol: `${item.symbol}`,
+                                    price: String(orderResult.filledPrice),
+                                    size: String(orderResult.filledQuantity),
+                                    direction: item.direction,
+                                    exchange: 'binance',
+                                    orderId: orderResult.order.orderId.toString(),
+                                    leverage: String(leverage),
+                                    status: 'pending'  // 先设为待处理状态
+                                });
+                                
+                                console.log(`交易记录保存成功: ${orderResult.order.orderId}`);
+                            } catch (error) {
+                                console.error(`交易记录保存失败: ${error.message}`);
+                                // 继续执行，不因记录保存失败而中断交易流程
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`交易失败: ${error.message}`);
+                        // 继续处理下一个交易对
+                        continue;
                     }
                 }
             }
@@ -105,23 +123,50 @@ export const updateProtectionStopLoss = async (req, res) => {
         if (Number(formattedPrice) > 0) {
             // 4. 清除该合约所有的条件单，包括止损和止盈
             try {
+                // 先尝试清除所有类型的条件单
                 await trader.cancelAllOrders(`${symbol}USDT`);
+                // 增加等待时间，确保币安API有足够的时间处理清除操作
                 await new Promise(resolve => setTimeout(resolve, 500));
             } catch (e) {
                 console.log("清除旧条件单失败", e);
             }
             
-            // 5. 直接市价平仓，锁定盈利
+            // 5. 创建新的保护止损条件单
+            const closeSide = direction === "buy" ? 'SELL' : "BUY";
+            
             try {
-                await trader.closePosition(`${symbol}USDT`);
-                console.log(`用户 ${userOptions.userId} 的 ${symbol} 已市价平仓`);
+                await trader.client.placeAlgoOrder(`${symbol}USDT`, {
+                    side: closeSide,
+                    type: 'STOP_MARKET', // 使用市价止损
+                    triggerPrice: Number(formattedPrice),
+                    closePosition: 'true', // 平仓
+                });
             } catch (e) {
-                console.log("市价平仓失败", e);
-                throw e;
+                console.log("创建保护止损单失败", e);
+                // 检查是否是因为重复订单错误
+                if (e.message.includes("An open stop or take profit order with GTE and closePosition in the direction is existing")) {
+                    // 再次尝试清除所有订单
+                    try {
+                        await trader.cancelAllOrders(`${symbol}USDT`);
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        // 再次尝试创建订单
+                        await trader.client.placeAlgoOrder(`${symbol}USDT`, {
+                            side: closeSide,
+                            type: 'STOP_MARKET', // 使用市价止损
+                            triggerPrice: Number(formattedPrice),
+                            closePosition: 'true', // 平仓
+                        });
+                    } catch (retryError) {
+                        console.log("重试创建保护止损单失败", retryError);
+                        throw retryError;
+                    }
+                } else {
+                    throw e;
+                }
             }
             
-            console.log(`用户 ${userOptions.userId} 的 ${symbol} 盈利保护已执行，市价平仓`);
-            return res.status(200).json({success: true, message: '盈利保护执行成功'});
+            console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);
+            return res.status(200).json({success: true, message: '保护止损单更新成功'});
         }
 
         return res.status(200).json({success: false, message: '保护止损价格无效'});
@@ -138,57 +183,25 @@ export const updateProtectionStopLoss = async (req, res) => {
  */
 export const getBinancePositions = async (userOptions) => {
     try {
-        console.log(`获取用户 ${userOptions.userId} 的 Binance 交易所持仓信息`);
-        
-        // 1. 初始化 API 客户端
-        const {apiKey, apiSecret, isTestOption} = userOptions
+        const {apiKey, apiSecret, isTestOption} = userOptions;
         const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
         
-        // 2. 获取所有持仓
-        const accountInfo = await trader.client.getAccountInfo();
-        console.log(`获取到账户信息:`, JSON.stringify(accountInfo, null, 2));
+        // 获取账户信息，其中包含持仓数据
+        const accountInfo = await trader.checkUserAccount();
         
-        // 检查 positions 字段
-        if (!accountInfo.positions || !Array.isArray(accountInfo.positions)) {
-            console.error(`账户信息中没有有效的 positions 字段`);
-            return [];
-        }
-        
-        const positions = accountInfo.positions;
-        console.log(`获取到 ${positions.length} 个持仓记录`);
-        
-        // 3. 处理持仓数据
-        const positionList = positions.filter(position => {
-            // 只返回有持仓的记录
-            const positionAmt = Number(position.positionAmt);
-            const hasPosition = positionAmt !== 0;
-            console.log(`检查持仓 ${position.symbol}: positionAmt=${position.positionAmt}, hasPosition=${hasPosition}`);
-            return hasPosition;
-        }).map(position => {
-            console.log(`处理持仓 ${position.symbol}:`, JSON.stringify(position, null, 2));
-            
-            // 提取交易对符号（去除 USDT 后缀）
-            const symbol = position.symbol.replace('USDT', '');
-            
-            // 确定交易方向
-            const direction = Number(position.positionAmt) > 0 ? 'buy' : 'sell';
-            
-            return {
-                symbol,
-                direction,
-                price: position.entryPrice || position.avgPrice, // 平均入场价格
-                size: Math.abs(Number(position.positionAmt)), // 持仓数量（取绝对值）
+        // 转换为统一格式，只返回有持仓的
+        return accountInfo.positions
+            .filter(position => parseFloat(position.positionAmt) !== 0) // 只返回有持仓的
+            .map(position => ({
+                symbol: position.symbol.replace('USDT', ''),
+                direction: position.positionSide === 'LONG' ? 'buy' : 'sell',
+                entryPrice: position.entryPrice,
+                size: position.positionAmt,
                 exchange: 'binance',
-                unrealisedPnl: position.unRealizedProfit || position.unrealizedProfit || position.pnl, // 未实现盈亏（尝试不同字段名）
-                leverage: position.leverage, // 杠杆
-                markPrice: position.markPrice || position.markPrice // 标记价格
-            };
-        });
-        
-        console.log(`用户 ${userOptions.userId} 的 Binance 交易所持仓信息:`, positionList);
-        return positionList;
+                unrealisedPnl: position.unRealizedProfit
+            }));
     } catch (error) {
-        console.error(`获取 Binance 交易所持仓信息出错:`, error);
+        console.error('获取 Binance 持仓信息失败:', error);
         return [];
     }
 };
