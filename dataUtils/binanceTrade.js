@@ -170,11 +170,7 @@ export const getBinancePositions = async (userOptions) => {
         
         const accountInfo = await trader.checkUserAccount();
         
-        // 查看返回的数据结构
-        console.log('Binance 账户信息:', JSON.stringify(accountInfo, null, 2));
-        
         if (!accountInfo.positions) {
-            console.error('Binance API 未返回 positions 字段');
             return [];
         }
         
@@ -182,9 +178,6 @@ export const getBinancePositions = async (userOptions) => {
         
         for (const position of accountInfo.positions) {
             if (parseFloat(position.positionAmt) !== 0) {
-                // 查看每个持仓的数据结构
-                console.log('Binance 持仓数据:', JSON.stringify(position, null, 2));
-                
                 const positionAmt = parseFloat(position.positionAmt);
                 const direction = positionAmt > 0 ? 'buy' : 'sell';
                 
@@ -195,9 +188,8 @@ export const getBinancePositions = async (userOptions) => {
                 if (!currentPrice) {
                     try {
                         currentPrice = await trader.client.getCurrentPrice(position.symbol);
-                        console.log(`获取 ${position.symbol} 的当前价格:`, currentPrice);
                     } catch (e) {
-                        console.error(`获取 ${position.symbol} 的当前价格失败:`, e.message);
+                        // 获取价格失败，继续处理
                     }
                 }
                 
@@ -218,7 +210,6 @@ export const getBinancePositions = async (userOptions) => {
         
         return positionsWithPrice;
     } catch (error) {
-        console.error('获取 Binance 持仓信息失败:', error);
         return [];
     }
 };

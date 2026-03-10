@@ -1,4 +1,5 @@
 import { UserTradeOptionsModel } from "buydip_scheme";
+import { TradeRecordModel } from "buydip_scheme/scheme/tradeRecord";
 import { updateProtectionStopLoss, getUserPositions } from "./apiTrade.js";
 
 /**
@@ -50,7 +51,6 @@ async function retryAsync(fn, maxRetries = 3, delay = 1000) {
 const calculateProfitPercentage = (currentPrice, entryPrice, direction) => {
     // 检查价格是否有效
     if (!isValidPrice(currentPrice) || !isValidPrice(entryPrice)) {
-        console.log('价格无效:', { currentPrice, entryPrice });
         return 0;
     }
     
@@ -59,25 +59,14 @@ const calculateProfitPercentage = (currentPrice, entryPrice, direction) => {
     
     // 避免除以零
     if (entryPrice === 0) {
-        console.log('入场价格为零');
         return 0;
     }
     
-    let profitPercentage = 0;
     if (direction === 'buy') {
-        profitPercentage = ((currentPrice - entryPrice) / entryPrice) * 100;
+        return ((currentPrice - entryPrice) / entryPrice) * 100;
     } else {
-        profitPercentage = ((entryPrice - currentPrice) / entryPrice) * 100;
+        return ((entryPrice - currentPrice) / entryPrice) * 100;
     }
-    
-    console.log('盈利计算:', {
-        direction,
-        currentPrice,
-        entryPrice,
-        profitPercentage
-    });
-    
-    return profitPercentage;
 };
 
 /**
@@ -135,12 +124,47 @@ const handleUserProfitProtection = async (userOption) => {
             1000 // 每次重试间隔1000ms
         );
 
+        // 获取用户的持仓币种列表
+        const positionSymbols = positions.map(p => p.symbol.toUpperCase());
+        logger.info(`用户 ${userOption.userId} 的持仓币种:`, positionSymbols);
+
+        // 查询用户的 pending 状态订单
+        const pendingOrders = await retryAsync(
+            () => TradeRecordModel.find({
+                userId: userOption.userId,
+                status: 'pending'
+            }),
+            2,
+            1000
+        );
+
+        logger.info(`用户 ${userOption.userId} 有 ${pendingOrders.length} 个 pending 状态的订单`);
+
+        // 检查并更新不在持仓中的订单状态
+        for (const order of pendingOrders) {
+            const orderSymbol = order.symbol.toUpperCase();
+            if (!positionSymbols.includes(orderSymbol)) {
+                logger.info(`用户 ${userOption.userId} 的 ${orderSymbol} 订单不在持仓中，将状态改为 cancelled`);
+                await retryAsync(
+                    () => TradeRecordModel.findByIdAndUpdate(order._id, {
+                        status: 'cancelled'
+                    }),
+                    2,
+                    1000
+                );
+            }
+        }
+
         if (positions.length === 0) {
             logger.info(`用户 ${userOption.userId} 没有持仓`);
             return { success: true, message: '没有持仓', updatedCount: 0 };
         }
 
         logger.info(`用户 ${userOption.userId} 有 ${positions.length} 个持仓`);
+        
+        // 获取用户在 TradeRecordModel 中的币种列表
+        const tradeRecordSymbols = pendingOrders.map(o => o.symbol.toUpperCase());
+        logger.info(`用户 ${userOption.userId} 在 TradeRecordModel 中的币种:`, tradeRecordSymbols);
 
         // 从用户配置中获取盈利保护触发阈值，默认为5%
         const profitProtectionThreshold = 6;
@@ -165,28 +189,20 @@ const handleUserProfitProtection = async (userOption) => {
                 logger.warn(`持仓数据缺少基本信息，跳过: ${JSON.stringify(position)}`);
                 continue;
             }
+            
+            // 检查该币种是否在 TradeRecordModel 中
+            const positionSymbolUpper = symbol.toUpperCase();
+            if (!tradeRecordSymbols.includes(positionSymbolUpper)) {
+                logger.info(`用户 ${userOption.userId} 的 ${symbol} 不在 TradeRecordModel 中，跳过盈利保护`);
+                continue;
+            }
 
             let actualProfitPercentage = 0;
             let hasValidProfit = false;
             let calculatedEntryPrice = entryPrice;
             
-            console.log('处理持仓:', {
-                symbol,
-                direction,
-                entryPrice,
-                currentPrice,
-                profitData,
-                exchange
-            });
-            
             if (profitData !== undefined) {
                 const profitValue = parseFloat(profitData);
-                console.log('盈利数据:', {
-                    profitData,
-                    profitValue,
-                    isNaN: isNaN(profitValue),
-                    exchange
-                });
                 
                 if (!isNaN(profitValue)) {
                     if (profitValue > 0) {
@@ -197,7 +213,6 @@ const handleUserProfitProtection = async (userOption) => {
                             // Binance: profitData 是金额，需要重新计算百分比
                             if (isValidPrice(currentPrice) && isValidPrice(entryPrice)) {
                                 actualProfitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
-                                console.log('从金额计算的盈利:', actualProfitPercentage);
                                 if (actualProfitPercentage > 0) {
                                     logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (从金额计算得到)`);
                                 } else {
@@ -220,7 +235,6 @@ const handleUserProfitProtection = async (userOption) => {
                 }
             } else if (isValidPrice(currentPrice) && isValidPrice(entryPrice)) {
                 actualProfitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
-                console.log('计算的盈利:', actualProfitPercentage);
                 if (actualProfitPercentage > 0) {
                     hasValidProfit = true;
                     logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (计算得到)`);
