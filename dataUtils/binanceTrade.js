@@ -41,56 +41,38 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
             await saveUserBalance(userOptions.userId, accountFunds)
             for (const item of futureContractData) {
                 if (direction === 'all' || direction === item.direction) {
-                    try {
-                        const {symbol, direction, symbolInfo} = item
-                        const priceStep = symbolInfo.filters.find(f => f.filterType === 'PRICE_FILTER').tickSize
-                        const qtyStep = symbolInfo.filters.find(f => f.filterType === 'LOT_SIZE').stepSize
-                        const symbolName = `${symbol}USDT`
-                        // 1. 检查当前持仓并平仓（如果需要）
-                        const currentPosition = await trader.getCurrentPosition(symbolName)
-                        if (currentPosition) {
-                            const currentDirection = currentPosition.positionSide
-                            if ((currentDirection === 'LONG' && direction === 'SHORT') ||
-                                (currentDirection === 'SHORT' && direction === 'LONG')) {
-                                console.log(`发现反向持仓，先平仓: ${currentDirection}`)
-                                await trader.closePosition(symbolName)
-                                await new Promise(resolve => setTimeout(resolve, 50))
-                            }
+                    // 执行交易
+                    const result = await trader.executeTrade({
+                        symbol: `${item.symbol}USDT`,
+                        usdtAmount: Number(maxVolume),
+                        direction: item.direction === "buy" ? 'LONG' : "SHORT",
+                        leverage: Number(leverage),
+                        minMargin: Number(insurance),
+                        takeProfitPercent: Number(takeProfit), // 止盈
+                        stopLossPercent: Number(stopLoss),// 止损
+                        symbolInfo: item.symbolInfo,
+                    });
+                    console.log('交易结果:', result);
+                    
+                    // 保存交易记录
+                    if (result.success && result.order && result.order.orderId) {
+                        try {
+                            await saveTradeRecord(userOptions.userId, {
+                                symbol: `${item.symbol}`,
+                                price: String(result.filledPrice),
+                                size: String(result.filledQuantity),
+                                direction: item.direction,
+                                exchange: 'binance',
+                                orderId: result.order.orderId.toString(),
+                                leverage: String(leverage),
+                                status: 'pending'  // 先设为待处理状态
+                            });
+                            
+                            console.log(`交易记录保存成功: ${result.order.orderId}`);
+                        } catch (error) {
+                            console.error(`交易记录保存失败: ${error.message}`);
+                            // 继续执行，不因记录保存失败而中断交易流程
                         }
-                        // 2. 下单
-                        let orderResult
-                        if (direction === 'LONG') {
-                            orderResult = await trader.buy(symbolName, leverage, maxVolume, stopLoss, takeProfit, priceStep, qtyStep)
-                        } else {
-                            orderResult = await trader.sell(symbolName, leverage, maxVolume, stopLoss, takeProfit, priceStep, qtyStep)
-                        }
-                        
-                        console.log('下单成功:', orderResult)
-                        // 3. 保存交易记录
-                        if (orderResult.order && orderResult.order.orderId) {
-                            try {
-                                await saveTradeRecord({
-                                    userId: userOptions.userId,
-                                    symbol: `${item.symbol}`,
-                                    price: String(orderResult.filledPrice),
-                                    size: String(orderResult.filledQuantity),
-                                    direction: item.direction,
-                                    exchange: 'binance',
-                                    orderId: orderResult.order.orderId.toString(),
-                                    leverage: String(leverage),
-                                    status: 'pending'  // 先设为待处理状态
-                                });
-                                
-                                console.log(`交易记录保存成功: ${orderResult.order.orderId}`);
-                            } catch (error) {
-                                console.error(`交易记录保存失败: ${error.message}`);
-                                // 继续执行，不因记录保存失败而中断交易流程
-                            }
-                        }
-                    } catch (error) {
-                        console.error(`交易失败: ${error.message}`);
-                        // 继续处理下一个交易对
-                        continue;
                     }
                 }
             }
