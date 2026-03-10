@@ -168,16 +168,18 @@ export const getBinancePositions = async (userOptions) => {
         const {apiKey, apiSecret, isTestOption} = userOptions;
         const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
         
-        // 获取账户信息，其中包含持仓数据
         const accountInfo = await trader.checkUserAccount();
         
-        // 转换为统一格式，只返回有持仓的
         return accountInfo.positions
-            .filter(position => parseFloat(position.positionAmt) !== 0) // 只返回有持仓的
+            .filter(position => parseFloat(position.positionAmt) !== 0)
             .map(position => ({
                 symbol: position.symbol.replace('USDT', ''),
                 direction: position.positionSide === 'LONG' ? 'buy' : 'sell',
                 entryPrice: position.entryPrice,
+                avgPrice: position.entryPrice,
+                markPrice: position.markPrice,
+                lastPrice: position.markPrice,
+                currentPrice: position.markPrice,
                 size: position.positionAmt,
                 exchange: 'binance',
                 unrealisedPnl: position.unRealizedProfit

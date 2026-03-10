@@ -77,14 +77,16 @@ const calculateProfitPercentage = (currentPrice, entryPrice, direction) => {
  */
 const calculateProtectionPrice = (entryPrice, direction, userOption) => {
     // 从用户配置中获取保护止损价格比例，默认为2%
-    const protectionPercentage = userOption?.profitProtectionPercentage || 2;
+    const protectionPercentage =  2;
 
     if (direction === 'buy') {
-        // 买入单：入场价格*(1+保护比例)，例如100 * 1.02 = 102
-        return entryPrice * (1 + protectionPercentage / 100);
-    } else {
-        // 卖出单：入场价格*(1-保护比例)，例如100 * 0.98 = 98
+        // 买入单：入场价格*(1-保护比例)，例如100 * 0.98 = 98
+        // 当价格下跌时触发止损，保护盈利
         return entryPrice * (1 - protectionPercentage / 100);
+    } else {
+        // 卖出单：入场价格*(1+保护比例)，例如100 * 1.02 = 102
+        // 当价格上涨时触发止损，保护盈利
+        return entryPrice * (1 + protectionPercentage / 100);
     }
 };
 
@@ -143,39 +145,32 @@ const handleUserProfitProtection = async (userOption) => {
         for (const position of positions) {
             const { symbol, direction, exchange = 'binance' } = position;
             
-            // 支持多种字段名称
             const entryPrice = position.entryPrice || position.price || position.avgPrice;
             const currentPrice = position.currentPrice || position.markPrice || position.lastPrice;
             const profitData = position.profitPercentage || position.unrealisedPnl || position.pnl;
             
-            // 验证必要字段
             if (!symbol || !direction) {
                 logger.warn(`持仓数据缺少基本信息，跳过: ${JSON.stringify(position)}`);
                 continue;
             }
 
-            // 计算盈利比例
             let actualProfitPercentage = 0;
             let hasValidProfit = false;
+            let calculatedEntryPrice = entryPrice;
             
             if (profitData !== undefined) {
-                // 尝试解析盈利数据
                 const profitValue = parseFloat(profitData);
                 if (!isNaN(profitValue)) {
-                    // 判断是否盈利：无论买入还是卖出，正值都表示盈利，负值表示亏损
                     if (profitValue > 0) {
                         hasValidProfit = true;
-                        // 直接使用unrealisedPnl作为百分比
                         actualProfitPercentage = profitValue;
                     } else {
-                        // 亏损，跳过
                         logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓亏损 ${Math.abs(profitValue).toFixed(2)}，跳过`);
                         continue;
                     }
                     logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (从unrealisedPnl获取)`);
                 }
             } else if (isValidPrice(currentPrice) && isValidPrice(entryPrice)) {
-                // 如果没有盈利数据但有价格数据，计算盈利比例
                 actualProfitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
                 if (actualProfitPercentage > 0) {
                     hasValidProfit = true;
@@ -186,28 +181,38 @@ const handleUserProfitProtection = async (userOption) => {
                 }
             }
 
-            // 如果没有有效盈利数据，跳过
             if (!hasValidProfit) {
                 logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓未盈利，跳过`);
                 continue;
             }
 
-            // 确保有入场价格用于计算保护止损
-            if (!isValidPrice(entryPrice)) {
+            if (!isValidPrice(calculatedEntryPrice) && isValidPrice(currentPrice) && profitData !== undefined) {
+                const profitValue = parseFloat(profitData);
+                if (!isNaN(profitValue) && profitValue > 0) {
+                    if (direction === 'buy') {
+                        calculatedEntryPrice = currentPrice / (1 + profitValue / 100);
+                    } else {
+                        calculatedEntryPrice = currentPrice / (1 - profitValue / 100);
+                    }
+                    if (isValidPrice(calculatedEntryPrice)) {
+                        logger.info(`用户 ${userOption.userId} 的 ${symbol} 从unrealisedPnl反推入场价格: ${calculatedEntryPrice.toFixed(4)}`);
+                    }
+                }
+            }
+
+            if (!isValidPrice(calculatedEntryPrice)) {
                 logger.warn(`持仓数据缺少入场价格，跳过: ${JSON.stringify(position)}`);
                 continue;
             }
 
-            // 如果盈利超过触发阈值，设置保护止损
             if (actualProfitPercentage >= profitProtectionThreshold) {
-                const protectionPrice = calculateProtectionPrice(parseFloat(entryPrice), direction, userOption);
-                logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${actualProfitPercentage.toFixed(2)}%，达到触发阈值 ${profitProtectionThreshold}%，使用入场价格 ${entryPrice}，设置保护止损价格为 ${protectionPrice.toFixed(4)}`);
+                const protectionPrice = calculateProtectionPrice(parseFloat(calculatedEntryPrice), direction, userOption);
+                logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${actualProfitPercentage.toFixed(2)}%，达到触发阈值 ${profitProtectionThreshold}%，使用入场价格 ${calculatedEntryPrice}，设置保护止损价格为 ${protectionPrice.toFixed(4)}`);
 
-                // 调用盈利保护服务更新止损单，使用重试机制
                 const updateResult = await retryAsync(
                     () => updateProtectionStopLoss(userOption, symbol, direction, protectionPrice, exchange),
-                    3, // 最大重试3次
-                    1500 // 每次重试间隔1500ms
+                    3,
+                    1500
                 );
                 if (updateResult.success) {
                     logger.info(`用户 ${userOption.userId} 的 ${symbol} 保护止损单更新成功`);

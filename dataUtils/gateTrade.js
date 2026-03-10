@@ -48,23 +48,21 @@ export const updateProtectionStopLoss = async (req, res) => {
                 const priceTriggeredOrder = await futuresApi.listPriceTriggeredOrders(settle, "open", {
                     contract: `${symbol}_USDT`,
                 });
-                await new Promise(resolve => setTimeout(resolve, 200));
+                await new Promise(resolve => setTimeout(resolve, 500));
                 
-                // 过滤出止损条件单
                 const stopLossOrders = priceTriggeredOrder.body.filter(order => {
-                    // 根据订单类型判断是否为止损单
                     return order.orderType === "close-long-position" || order.orderType === "close-short-position";
                 });
                 
                 if (stopLossOrders.length > 0) {
                     await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`});
-                    await new Promise(resolve => setTimeout(resolve, 200));
+                    await new Promise(resolve => setTimeout(resolve, 800));
                 }
             } catch (e) {
                 console.log("清除旧止损条件单失败", e);
+                await new Promise(resolve => setTimeout(resolve, 300));
             }
             
-            // 6. 创建新的保护止损条件单
             await futuresApi.createPriceTriggeredOrder(settle, {
                 initial: {
                     contract: `${symbol}_USDT`,
@@ -82,6 +80,8 @@ export const updateProtectionStopLoss = async (req, res) => {
                 },
                 orderType: direction === "buy" ? "close-long-position" : "close-short-position", // 订单类型
             });
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
             
             console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);  
             return res.status(200).json({success: true, message: '保护止损单更新成功'});
@@ -364,16 +364,18 @@ export const getGatePositions = async (userOptions) => {
         const futuresApi = new GateApi.FuturesApi(client);
         const settle = "usdt";
         
-        // 获取所有持仓
         const positions = await futuresApi.listPositions(settle);
         
-        // 转换为统一格式
         return positions.body
-            .filter(position => position.size !== 0) // 只返回有持仓的
+            .filter(position => position.size !== 0)
             .map(position => ({
                 symbol: position.contract.replace('_USDT', ''),
                 direction: position.size > 0 ? 'buy' : 'sell',
-                entryPrice: position.avgPrice,
+                entryPrice: position.entryPrice,
+                avgPrice: position.entryPrice,
+                markPrice: position.markPrice,
+                lastPrice: position.markPrice,
+                currentPrice: position.markPrice,
                 size: Math.abs(position.size),
                 exchange: 'gate',
                 unrealisedPnl: position.unrealisedPnl
