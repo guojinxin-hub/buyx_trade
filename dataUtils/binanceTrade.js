@@ -170,20 +170,53 @@ export const getBinancePositions = async (userOptions) => {
         
         const accountInfo = await trader.checkUserAccount();
         
-        return accountInfo.positions
-            .filter(position => parseFloat(position.positionAmt) !== 0)
-            .map(position => ({
-                symbol: position.symbol.replace('USDT', ''),
-                direction: position.positionSide === 'LONG' ? 'buy' : 'sell',
-                entryPrice: position.entryPrice,
-                avgPrice: position.entryPrice,
-                markPrice: position.markPrice,
-                lastPrice: position.markPrice,
-                currentPrice: position.markPrice,
-                size: position.positionAmt,
-                exchange: 'binance',
-                unrealisedPnl: position.unRealizedProfit
-            }));
+        // 查看返回的数据结构
+        console.log('Binance 账户信息:', JSON.stringify(accountInfo, null, 2));
+        
+        if (!accountInfo.positions) {
+            console.error('Binance API 未返回 positions 字段');
+            return [];
+        }
+        
+        const positionsWithPrice = [];
+        
+        for (const position of accountInfo.positions) {
+            if (parseFloat(position.positionAmt) !== 0) {
+                // 查看每个持仓的数据结构
+                console.log('Binance 持仓数据:', JSON.stringify(position, null, 2));
+                
+                const positionAmt = parseFloat(position.positionAmt);
+                const direction = positionAmt > 0 ? 'buy' : 'sell';
+                
+                // 获取当前价格
+                let currentPrice = position.markPrice || position.lastPrice || position.currentPrice;
+                
+                // 如果没有价格数据，尝试通过 API 获取
+                if (!currentPrice) {
+                    try {
+                        currentPrice = await trader.client.getCurrentPrice(position.symbol);
+                        console.log(`获取 ${position.symbol} 的当前价格:`, currentPrice);
+                    } catch (e) {
+                        console.error(`获取 ${position.symbol} 的当前价格失败:`, e.message);
+                    }
+                }
+                
+                positionsWithPrice.push({
+                    symbol: position.symbol.replace('USDT', ''),
+                    direction: direction,
+                    entryPrice: position.entryPrice,
+                    avgPrice: position.entryPrice,
+                    markPrice: position.markPrice,
+                    lastPrice: position.lastPrice,
+                    currentPrice: currentPrice,
+                    size: positionAmt,
+                    exchange: 'binance',
+                    unrealisedPnl: position.unRealizedProfit
+                });
+            }
+        }
+        
+        return positionsWithPrice;
     } catch (error) {
         console.error('获取 Binance 持仓信息失败:', error);
         return [];

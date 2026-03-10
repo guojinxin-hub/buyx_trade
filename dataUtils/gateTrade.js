@@ -1,9 +1,9 @@
 import {intersectionWith, isEmpty} from "lodash";
-import {formatPrice} from "./formatPrice";
-import {decrypt} from "./utils";
-import {saveTradeRecord} from "./saveTradeRecord";
+import {formatPrice} from "./formatPrice.js";
+import {decrypt} from "./utils/index.js";
+import {saveTradeRecord} from "./saveTradeRecord.js";
 import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
-import {saveUserBalance} from "./saveUserBalance";
+import {saveUserBalance} from "./saveUserBalance.js";
 
 const GateApi = require('gate-api');
 const TRADE_API_URL = process.env.TRADE_API_URL

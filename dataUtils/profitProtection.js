@@ -1,5 +1,5 @@
 import { UserTradeOptionsModel } from "buydip_scheme";
-import { updateProtectionStopLoss, getUserPositions } from "./apiTrade";
+import { updateProtectionStopLoss, getUserPositions } from "./apiTrade.js";
 
 /**
  * 日志记录工具
@@ -50,6 +50,7 @@ async function retryAsync(fn, maxRetries = 3, delay = 1000) {
 const calculateProfitPercentage = (currentPrice, entryPrice, direction) => {
     // 检查价格是否有效
     if (!isValidPrice(currentPrice) || !isValidPrice(entryPrice)) {
+        console.log('价格无效:', { currentPrice, entryPrice });
         return 0;
     }
     
@@ -58,14 +59,25 @@ const calculateProfitPercentage = (currentPrice, entryPrice, direction) => {
     
     // 避免除以零
     if (entryPrice === 0) {
+        console.log('入场价格为零');
         return 0;
     }
     
+    let profitPercentage = 0;
     if (direction === 'buy') {
-        return ((currentPrice - entryPrice) / entryPrice) * 100;
+        profitPercentage = ((currentPrice - entryPrice) / entryPrice) * 100;
     } else {
-        return ((entryPrice - currentPrice) / entryPrice) * 100;
+        profitPercentage = ((entryPrice - currentPrice) / entryPrice) * 100;
     }
+    
+    console.log('盈利计算:', {
+        direction,
+        currentPrice,
+        entryPrice,
+        profitPercentage
+    });
+    
+    return profitPercentage;
 };
 
 /**
@@ -158,20 +170,57 @@ const handleUserProfitProtection = async (userOption) => {
             let hasValidProfit = false;
             let calculatedEntryPrice = entryPrice;
             
+            console.log('处理持仓:', {
+                symbol,
+                direction,
+                entryPrice,
+                currentPrice,
+                profitData,
+                exchange
+            });
+            
             if (profitData !== undefined) {
                 const profitValue = parseFloat(profitData);
+                console.log('盈利数据:', {
+                    profitData,
+                    profitValue,
+                    isNaN: isNaN(profitValue),
+                    exchange
+                });
+                
                 if (!isNaN(profitValue)) {
                     if (profitValue > 0) {
                         hasValidProfit = true;
-                        actualProfitPercentage = profitValue;
+                        
+                        // 根据交易所类型判断 profitData 是百分比还是金额
+                        if (exchange === 'binance') {
+                            // Binance: profitData 是金额，需要重新计算百分比
+                            if (isValidPrice(currentPrice) && isValidPrice(entryPrice)) {
+                                actualProfitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
+                                console.log('从金额计算的盈利:', actualProfitPercentage);
+                                if (actualProfitPercentage > 0) {
+                                    logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (从金额计算得到)`);
+                                } else {
+                                    logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓未盈利，跳过`);
+                                    continue;
+                                }
+                            } else {
+                                logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓数据不足，跳过`);
+                                continue;
+                            }
+                        } else {
+                            // 其他交易所: profitData 是百分比
+                            actualProfitPercentage = profitValue;
+                            logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (从unrealisedPnl获取)`);
+                        }
                     } else {
                         logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓亏损 ${Math.abs(profitValue).toFixed(2)}，跳过`);
                         continue;
                     }
-                    logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (从unrealisedPnl获取)`);
                 }
             } else if (isValidPrice(currentPrice) && isValidPrice(entryPrice)) {
                 actualProfitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
+                console.log('计算的盈利:', actualProfitPercentage);
                 if (actualProfitPercentage > 0) {
                     hasValidProfit = true;
                     logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (计算得到)`);

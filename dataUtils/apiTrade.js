@@ -1,6 +1,6 @@
-import {gateTrade, updateProtectionStopLoss as updateGateProtectionStopLoss} from "./gateTrade";
-import {binanceTrade, updateProtectionStopLoss as updateBinanceProtectionStopLoss} from "./binanceTrade";
-import {okxTrade} from "./okxTrade";
+import {gateTrade, updateProtectionStopLoss as updateGateProtectionStopLoss} from "./gateTrade.js";
+import {binanceTrade, updateProtectionStopLoss as updateBinanceProtectionStopLoss} from "./binanceTrade.js";
+import {okxTrade} from "./okxTrade.js";
 
 export const apiTrade = async ({tradeData, userOptions}) => {
     const {belong} = userOptions
