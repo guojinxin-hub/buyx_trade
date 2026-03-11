@@ -41,9 +41,8 @@ export const closePositions = async (req, res) => {
                     if (pos.unrealisedPnl !== undefined) {
                         pnl = parseFloat(pos.unrealisedPnl) || 0;
                     } else {
-                        // 备用方案：根据当前价格和入场价格计算盈亏
-                        const entryPrice = parseFloat(pos.price) || 0;
-                        const currentPrice = parseFloat(pos.markPrice) || 0;
+                        const entryPrice = parseFloat(pos.entryPrice) || 0;
+                        const currentPrice = parseFloat(pos.currentPrice) || 0;
                         
                         if (entryPrice > 0 && currentPrice > 0) {
                             if (pos.direction === 'buy') {
@@ -60,25 +59,9 @@ export const closePositions = async (req, res) => {
                     return pnl > 0;
                 });
 
-                // 获取用户的交易记录
-                const tradeRecords = await TradeRecordModel.find({
-                    userId: option.userId,
-                    status: 'pending'
-                }).lean();
-
-                // 获取交易对
-                const symbols = tradeRecords.map(record => record.symbol);
-
-                // 筛选盈利单
-                const profitablePositionsFiltered = profitablePositions.filter(pos =>
-                    symbols.includes(pos.symbol)
-                );
-
-                tradeData = profitablePositionsFiltered.map(pos => ({ symbol: pos.symbol }));
+                tradeData = profitablePositions.map(pos => ({ symbol: pos.symbol }));
 
                 console.log(`用户 ${option.userId} 的盈利单持仓:`, profitablePositions);
-                console.log(`用户 ${option.userId} 的筛选后盈利单:`, profitablePositionsFiltered);
-
                 console.log(`为用户 ${option.userId} 筛选出的平仓交易对:`, tradeData);
 
                 if (isEmpty(tradeData)) {
