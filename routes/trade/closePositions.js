@@ -50,7 +50,7 @@ export const closePositions = async (req, res) => {
                                 pnl = (currentPrice - entryPrice) * pos.size;
                             } else {
                                 // 空单：当前价格 < 入场价格 为盈利
-                                pnl = (entryPrice - currentPrice) * pos.size;
+                                pnl = (entryPrice - currentPrice) * Math.abs(pos.size);
                             }
                         }
                     }
