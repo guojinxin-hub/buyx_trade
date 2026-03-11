@@ -143,8 +143,16 @@ const handleUserProfitProtection = async (userOption) => {
         // 检查并更新不在持仓中的订单状态
         for (const order of pendingOrders) {
             const orderSymbol = order.symbol.toUpperCase();
-            if (!positionSymbols.includes(orderSymbol)) {
-                logger.info(`用户 ${userOption.userId} 的 ${orderSymbol} 订单不在持仓中，将状态改为 cancelled`);
+            const orderExchange = order.exchange || 'binance'; // 默认为binance
+            
+            // 检查该订单在对应交易所是否有持仓
+            const hasPosition = positions.some(p => 
+                p.symbol.toUpperCase() === orderSymbol && 
+                (p.exchange || 'binance') === orderExchange
+            );
+            
+            if (!hasPosition) {
+                logger.info(`用户 ${userOption.userId} 的 ${orderSymbol} 订单在 ${orderExchange} 交易所不在持仓中，将状态改为 cancelled`);
                 await retryAsync(
                     () => TradeRecordModel.findByIdAndUpdate(order._id, {
                         status: 'cancelled'

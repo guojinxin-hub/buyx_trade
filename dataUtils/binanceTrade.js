@@ -163,12 +163,33 @@ export const updateProtectionStopLoss = async (req, res) => {
  * @param {Object} userOptions - 用户配置
  * @returns {Promise<Array>} 持仓信息列表
  */
+// 网络请求重试函数
+const retryRequest = async (fn, retries = 3, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await fn();
+        } catch (error) {
+            console.error(`请求失败，第${i + 1}次尝试:`, error.message);
+            if (i === retries - 1) {
+                // 最后一次尝试失败，抛出错误
+                throw error;
+            }
+            // 等待一段时间再重试
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+};
+
 export const getBinancePositions = async (userOptions) => {
     try {
         const {apiKey, apiSecret, isTestOption} = userOptions;
         const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
         
-        const accountInfo = await trader.checkUserAccount();
+        // 使用重试机制获取账户信息
+        const accountInfo = await retryRequest(() => trader.checkUserAccount(), 3, 3000);
+        
+        // 添加延迟，避免API调用过于频繁
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         if (!accountInfo.positions) {
             return [];
@@ -187,7 +208,10 @@ export const getBinancePositions = async (userOptions) => {
                 // 如果没有价格数据，尝试通过 API 获取
                 if (!currentPrice) {
                     try {
-                        currentPrice = await trader.client.getCurrentPrice(position.symbol);
+                        // 使用重试机制获取价格
+                        currentPrice = await retryRequest(() => trader.client.getCurrentPrice(position.symbol), 2, 2000);
+                        // 添加延迟，避免API调用过于频繁
+                        await new Promise(resolve => setTimeout(resolve, 500));
                     } catch (e) {
                         // 获取价格失败，继续处理
                     }
@@ -210,6 +234,7 @@ export const getBinancePositions = async (userOptions) => {
         
         return positionsWithPrice;
     } catch (error) {
+        console.error('获取 Binance 交易所持仓信息出错:', error.message);
         return [];
     }
 };
