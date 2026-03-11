@@ -365,7 +365,7 @@ export const getGatePositions = async (userOptions) => {
         const settle = "usdt";
         
         const positions = await futuresApi.listPositions(settle);
-        
+
         return positions.body
             .filter(position => position.size !== 0)
             .map(position => ({
@@ -378,7 +378,8 @@ export const getGatePositions = async (userOptions) => {
                 currentPrice: position.markPrice,
                 size: Math.abs(position.size),
                 exchange: 'gate',
-                unrealisedPnl: position.unrealisedPnl
+                unrealisedPnl: position.unrealisedPnl,
+                leverage: position.leverage
             }));
     } catch (error) {
         console.error('获取 Gate 持仓信息失败:', error);

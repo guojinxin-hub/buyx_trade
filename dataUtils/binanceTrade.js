@@ -198,14 +198,17 @@ export const getBinancePositions = async (userOptions) => {
         const positionsWithPrice = [];
         
         for (const position of accountInfo.positions) {
-            if (parseFloat(position.positionAmt) !== 0) {
-                const positionAmt = parseFloat(position.positionAmt);
+            const positionAmt = parseFloat(position.positionAmt);
+            if (positionAmt !== 0) {
                 const direction = positionAmt > 0 ? 'buy' : 'sell';
                 
-                // 获取当前价格
-                let currentPrice = position.markPrice || position.lastPrice || position.currentPrice;
+                // 获取当前价格：优先使用 notional / positionAmt 计算
+                let currentPrice = 0;
+                if (position.notional) {
+                    currentPrice = parseFloat(position.notional) / Math.abs(positionAmt);
+                }
                 
-                // 如果没有价格数据，尝试通过 API 获取
+                // 如果还没有价格数据，尝试通过 API 获取
                 if (!currentPrice) {
                     try {
                         // 使用重试机制获取价格
@@ -213,10 +216,11 @@ export const getBinancePositions = async (userOptions) => {
                         // 添加延迟，避免API调用过于频繁
                         await new Promise(resolve => setTimeout(resolve, 500));
                     } catch (e) {
-                        // 获取价格失败，继续处理
+                        // 获取价格失败，使用 entryPrice 作为备选
+                        currentPrice = parseFloat(position.entryPrice) || 0;
                     }
                 }
-                
+
                 positionsWithPrice.push({
                     symbol: position.symbol.replace('USDT', ''),
                     direction: direction,
@@ -225,9 +229,10 @@ export const getBinancePositions = async (userOptions) => {
                     markPrice: position.markPrice,
                     lastPrice: position.lastPrice,
                     currentPrice: currentPrice,
-                    size: positionAmt,
+                    size: Math.abs(positionAmt),
                     exchange: 'binance',
-                    unrealisedPnl: position.unRealizedProfit
+                    unrealisedPnl: position.unrealizedProfit,
+                    leverage: position.leverage
                 });
             }
         }
