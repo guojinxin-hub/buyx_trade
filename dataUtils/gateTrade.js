@@ -365,22 +365,36 @@ export const getGatePositions = async (userOptions) => {
         const settle = "usdt";
         
         const positions = await futuresApi.listPositions(settle);
-
         return positions.body
             .filter(position => position.size !== 0)
-            .map(position => ({
-                symbol: position.contract.replace('_USDT', ''),
-                direction: position.size > 0 ? 'buy' : 'sell',
-                entryPrice: position.entryPrice,
-                avgPrice: position.entryPrice,
-                markPrice: position.markPrice,
-                lastPrice: position.markPrice,
-                currentPrice: position.markPrice,
-                size: Math.abs(position.size),
-                exchange: 'gate',
-                unrealisedPnl: position.unrealisedPnl,
-                leverage: position.leverage
-            }));
+            .map(position => {
+                const entryPrice = parseFloat(position.entryPrice) || 0;
+                const markPrice = parseFloat(position.markPrice) || 0;
+                const leverage = parseFloat(position.leverage) || 1;
+                
+                // 计算收益率: (当前价格 - 入场价格) / 入场价格 * 杠杆 * 100%
+                let profitPercentage = 0;
+                if (entryPrice > 0 && markPrice > 0) {
+                    const priceDiff = position.size > 0 
+                        ? (markPrice - entryPrice) / entryPrice  // 做多
+                        : (entryPrice - markPrice) / entryPrice; // 做空
+                    profitPercentage = priceDiff * leverage * 100;
+                }
+                console.log(5555555,profitPercentage)
+                return {
+                    symbol: position.contract.replace('_USDT', ''),
+                    direction: position.size > 0 ? 'buy' : 'sell',
+                    entryPrice: position.entryPrice,
+                    avgPrice: position.entryPrice,
+                    markPrice: position.markPrice,
+                    lastPrice: position.markPrice,
+                    currentPrice: position.markPrice,
+                    size: Math.abs(position.size),
+                    exchange: 'gate',
+                    unrealisedPnl: profitPercentage, // 返回计算后的收益率百分比
+                    leverage: position.leverage
+                };
+            });
     } catch (error) {
         console.error('获取 Gate 持仓信息失败:', error);
         return [];

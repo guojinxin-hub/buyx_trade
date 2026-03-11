@@ -41,7 +41,33 @@ async function retryAsync(fn, maxRetries = 3, delay = 1000) {
     }
 }
 
+/**
+ * 计算盈利比例
+ * @param {number} currentPrice - 当前价格
+ * @param {number} entryPrice - 入场价格
+ * @param {string} direction - 交易方向
+ * @returns {number} 盈利比例（百分比）
+ */
+const calculateProfitPercentage = (currentPrice, entryPrice, direction) => {
+    // 检查价格是否有效
+    if (!isValidPrice(currentPrice) || !isValidPrice(entryPrice)) {
+        return 0;
+    }
 
+    currentPrice = parseFloat(currentPrice);
+    entryPrice = parseFloat(entryPrice);
+
+    // 避免除以零
+    if (entryPrice === 0) {
+        return 0;
+    }
+
+    if (direction === 'buy') {
+        return ((currentPrice - entryPrice) / entryPrice) * 100;
+    } else {
+        return ((entryPrice - currentPrice) / entryPrice) * 100;
+    }
+};
 
 /**
  * 计算保护止损价格
@@ -76,8 +102,6 @@ const isValidPrice = (price) => {
     return !isNaN(priceNum) && priceNum > 0;
 };
 
-
-
 /**
  * 处理单个用户的盈利保护
  * @param {Object} userOption - 用户配置
@@ -97,6 +121,7 @@ const handleUserProfitProtection = async (userOption) => {
         const positions = await getUserPositions(userOption)
 
 
+
         // 获取用户的持仓币种列表
         const positionSymbols = positions.map(p => p.symbol.toUpperCase());
         logger.info(`用户 ${userOption.userId} 的持仓币种:`, positionSymbols);
@@ -108,6 +133,7 @@ const handleUserProfitProtection = async (userOption) => {
             status: 'pending',
             exchange: userPlatform
         })
+
 
         logger.info(`用户 ${userOption.userId} 有 ${pendingOrders.length} 个 pending 状态的订单`);
 
@@ -124,7 +150,7 @@ const handleUserProfitProtection = async (userOption) => {
 
             if (!hasPosition) {
                 logger.info(`用户 ${userOption.userId} 的 ${orderSymbol} 订单在 ${orderExchange} 交易所不在持仓中，将状态改为 cancelled`);
-                await TradeRecordModel.findByIdAndUpdate(order._id, {
+                awaitTradeRecordModel.findByIdAndUpdate(order._id, {
                     status: 'cancelled'
                 });
             }
@@ -142,7 +168,7 @@ const handleUserProfitProtection = async (userOption) => {
         logger.info(`用户 ${userOption.userId} 在 TradeRecordModel 中的币种:`, tradeRecordSymbols);
 
         // 从用户配置中获取盈利保护触发阈值，默认为5%
-        const profitProtectionThreshold = 6;
+        const profitProtectionThreshold = 5;
 
         // 处理结果
         const result = {
@@ -152,36 +178,96 @@ const handleUserProfitProtection = async (userOption) => {
             symbols: []
         };
 
-        // 对每个在 TradeRecordModel 中的币种处理盈利保护
-        for (const order of pendingOrders) {
-            const { symbol, exchange = 'binance' } = order;
-            const orderSymbolUpper = symbol.toUpperCase();
+        // 对每个持仓处理盈利保护
+        for (const position of positions) {
+            const { symbol, direction, exchange = 'binance' } = position;
 
-            // 查找该币种的持仓
-            const position = positions.find(p => p.symbol.toUpperCase() === orderSymbolUpper && p.exchange === exchange);
-            if (!position) {
-                logger.info(`用户 ${userOption.userId} 的 ${symbol} 没有持仓，跳过盈利保护`);
+            const entryPrice = position.entryPrice || position.price || position.avgPrice;
+            const currentPrice = position.currentPrice || position.markPrice || position.lastPrice;
+            const profitData = position.profitPercentage || position.unrealisedPnl || position.pnl;
+
+            if (!symbol || !direction) {
+                logger.warn(`持仓数据缺少基本信息，跳过: ${JSON.stringify(position)}`);
                 continue;
             }
 
-            // 使用持仓中的方向，而不是订单中的方向
-            const direction = position.direction;
-            // 将价格转换为数值类型，参考 closePositions.js 的做法
-            const entryPrice = parseFloat(position.entryPrice) || parseFloat(position.price) || parseFloat(position.avgPrice) || 0;
-            const currentPrice = parseFloat(position.currentPrice) || parseFloat(position.markPrice) || parseFloat(position.lastPrice) || 0;
-            // 直接使用 unrealisedPnl 作为收益率（百分比）
-            const actualProfitPercentage = parseFloat(position.unrealisedPnl) || 0;
+            // 检查该币种是否在 TradeRecordModel 中
+            const positionSymbolUpper = symbol.toUpperCase();
+            if (!tradeRecordSymbols.includes(positionSymbolUpper)) {
+                logger.info(`用户 ${userOption.userId} 的 ${symbol} 不在 TradeRecordModel 中，跳过盈利保护`);
+                continue;
+            }
+
+            let actualProfitPercentage = 0;
+            let hasValidProfit = false;
             let calculatedEntryPrice = entryPrice;
 
-            logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓信息 - 方向: ${direction}, 入场价: ${entryPrice}, 当前价: ${currentPrice}, 收益率: ${actualProfitPercentage}%`);
+            if (profitData !== undefined) {
+                const profitValue = parseFloat(profitData);
 
-            // 检查是否盈利
-            if (actualProfitPercentage <= 0) {
-                logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓未盈利或亏损: ${actualProfitPercentage}%`);
+                if (!isNaN(profitValue)) {
+                    if (profitValue > 0) {
+                        hasValidProfit = true;
+
+                        // 根据交易所类型判断 profitData 是百分比还是金额
+                        if (exchange === 'binance') {
+                            // Binance: profitData 是金额，需要重新计算百分比
+                            if (isValidPrice(currentPrice) && isValidPrice(entryPrice)) {
+                                actualProfitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
+                                if (actualProfitPercentage > 0) {
+                                    logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (从金额计算得到)`);
+                                } else {
+                                    logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓未盈利，跳过`);
+                                    continue;
+                                }
+                            } else {
+                                logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓数据不足，跳过`);
+                                continue;
+                            }
+                        } else {
+                            // 其他交易所: profitData 是百分比
+                            actualProfitPercentage = profitValue;
+                            logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (从unrealisedPnl获取)`);
+                        }
+                    } else {
+                        logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓亏损 ${Math.abs(profitValue).toFixed(2)}，跳过`);
+                        continue;
+                    }
+                }
+            } else if (isValidPrice(currentPrice) && isValidPrice(entryPrice)) {
+                actualProfitPercentage = calculateProfitPercentage(currentPrice, entryPrice, direction);
+                if (actualProfitPercentage > 0) {
+                    hasValidProfit = true;
+                    logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (计算得到)`);
+                } else {
+                    logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓未盈利，跳过`);
+                    continue;
+                }
+            }
+
+            if (!hasValidProfit) {
+                logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓未盈利，跳过`);
                 continue;
             }
-            
-            logger.info(`用户 ${userOption.userId} 的 ${symbol} 持仓盈利 ${actualProfitPercentage.toFixed(2)}% (直接从 unrealisedPnl 获取)`);
+
+            if (!isValidPrice(calculatedEntryPrice) && isValidPrice(currentPrice) && profitData !== undefined) {
+                const profitValue = parseFloat(profitData);
+                if (!isNaN(profitValue) && profitValue > 0) {
+                    if (direction === 'buy') {
+                        calculatedEntryPrice = currentPrice / (1 + profitValue / 100);
+                    } else {
+                        calculatedEntryPrice = currentPrice / (1 - profitValue / 100);
+                    }
+                    if (isValidPrice(calculatedEntryPrice)) {
+                        logger.info(`用户 ${userOption.userId} 的 ${symbol} 从unrealisedPnl反推入场价格: ${calculatedEntryPrice.toFixed(4)}`);
+                    }
+                }
+            }
+
+            if (!isValidPrice(calculatedEntryPrice)) {
+                logger.warn(`持仓数据缺少入场价格，跳过: ${JSON.stringify(position)}`);
+                continue;
+            }
 
             if (actualProfitPercentage >= profitProtectionThreshold) {
                 const protectionPrice = calculateProtectionPrice(parseFloat(calculatedEntryPrice), direction, userOption);

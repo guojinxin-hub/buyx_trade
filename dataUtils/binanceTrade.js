@@ -103,14 +103,14 @@ export const updateProtectionStopLoss = async (req, res) => {
         const formattedPrice = formatPrice(protectionPrice.toString(), Number(priceStep));
         
         if (Number(formattedPrice) > 0) {
-            // 4. 清除该合约的所有止损条件单，保留止盈订单
+            // 4. 清除该合约所有的条件单，包括止损和止盈
             try {
-                // 只清除止损类型的条件单
-                await trader.cancelOrders(`${symbol}USDT`, 'stop_loss');
+                // 先尝试清除所有类型的条件单
+                await trader.cancelAllOrders(`${symbol}USDT`);
                 // 增加等待时间，确保币安API有足够的时间处理清除操作
                 await new Promise(resolve => setTimeout(resolve, 500));
             } catch (e) {
-                console.log("清除旧止损单失败", e);
+                console.log("清除旧条件单失败", e);
             }
             
             // 5. 创建新的保护止损条件单
@@ -198,17 +198,14 @@ export const getBinancePositions = async (userOptions) => {
         const positionsWithPrice = [];
         
         for (const position of accountInfo.positions) {
-            const positionAmt = parseFloat(position.positionAmt);
-            if (positionAmt !== 0) {
+            if (parseFloat(position.positionAmt) !== 0) {
+                const positionAmt = parseFloat(position.positionAmt);
                 const direction = positionAmt > 0 ? 'buy' : 'sell';
                 
-                // 获取当前价格：优先使用 notional / positionAmt 计算
-                let currentPrice = 0;
-                if (position.notional) {
-                    currentPrice = parseFloat(position.notional) / Math.abs(positionAmt);
-                }
+                // 获取当前价格
+                let currentPrice = position.markPrice || position.lastPrice || position.currentPrice;
                 
-                // 如果还没有价格数据，尝试通过 API 获取
+                // 如果没有价格数据，尝试通过 API 获取
                 if (!currentPrice) {
                     try {
                         // 使用重试机制获取价格
@@ -216,11 +213,23 @@ export const getBinancePositions = async (userOptions) => {
                         // 添加延迟，避免API调用过于频繁
                         await new Promise(resolve => setTimeout(resolve, 500));
                     } catch (e) {
-                        // 获取价格失败，使用 entryPrice 作为备选
-                        currentPrice = parseFloat(position.entryPrice) || 0;
+                        // 获取价格失败，继续处理
                     }
                 }
-
+                
+                // 计算收益率: (当前价格 - 入场价格) / 入场价格 * 杠杆 * 100%
+                const entryPrice = parseFloat(position.entryPrice) || 0;
+                const markPrice = parseFloat(position.markPrice) || 0;
+                const leverage = parseFloat(position.leverage) || 1;
+                
+                let profitPercentage = 0;
+                if (entryPrice > 0 && markPrice > 0) {
+                    const priceDiff = positionAmt > 0 
+                        ? (markPrice - entryPrice) / entryPrice  // 做多
+                        : (entryPrice - markPrice) / entryPrice; // 做空
+                    profitPercentage = priceDiff * leverage * 100;
+                }
+                
                 positionsWithPrice.push({
                     symbol: position.symbol.replace('USDT', ''),
                     direction: direction,
@@ -229,10 +238,9 @@ export const getBinancePositions = async (userOptions) => {
                     markPrice: position.markPrice,
                     lastPrice: position.lastPrice,
                     currentPrice: currentPrice,
-                    size: Math.abs(positionAmt),
+                    size: positionAmt,
                     exchange: 'binance',
-                    unrealisedPnl: position.unrealizedProfit,
-                    leverage: position.leverage
+                    unrealisedPnl: profitPercentage // 返回计算后的收益率百分比
                 });
             }
         }

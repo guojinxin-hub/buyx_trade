@@ -79,7 +79,6 @@ export const getUserPositions = async (userOption) => {
                 console.log('调用 Gate 交易所的持仓信息获取');
                 // 导入 Gate 交易所的获取持仓函数
                 const {getGatePositions} = await import('./gateTrade');
-                console.log(5555555555,await getGatePositions(userOption))
                 return await getGatePositions(userOption);
             case 'Binance':
                 console.log('调用 Binance 交易所的持仓信息获取');
