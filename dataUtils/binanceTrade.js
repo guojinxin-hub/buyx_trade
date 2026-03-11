@@ -103,14 +103,14 @@ export const updateProtectionStopLoss = async (req, res) => {
         const formattedPrice = formatPrice(protectionPrice.toString(), Number(priceStep));
         
         if (Number(formattedPrice) > 0) {
-            // 4. 清除该合约所有的条件单，包括止损和止盈
+            // 4. 清除该合约的所有止损条件单，保留止盈订单
             try {
-                // 先尝试清除所有类型的条件单
-                await trader.cancelAllOrders(`${symbol}USDT`);
+                // 只清除止损类型的条件单
+                await trader.cancelOrders(`${symbol}USDT`, 'stop_loss');
                 // 增加等待时间，确保币安API有足够的时间处理清除操作
                 await new Promise(resolve => setTimeout(resolve, 500));
             } catch (e) {
-                console.log("清除旧条件单失败", e);
+                console.log("清除旧止损单失败", e);
             }
             
             // 5. 创建新的保护止损条件单
