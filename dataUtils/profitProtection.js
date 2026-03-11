@@ -53,15 +53,15 @@ const calculateProfitPercentage = (currentPrice, entryPrice, direction) => {
     if (!isValidPrice(currentPrice) || !isValidPrice(entryPrice)) {
         return 0;
     }
-    
+
     currentPrice = parseFloat(currentPrice);
     entryPrice = parseFloat(entryPrice);
-    
+
     // 避免除以零
     if (entryPrice === 0) {
         return 0;
     }
-    
+
     if (direction === 'buy') {
         return ((currentPrice - entryPrice) / entryPrice) * 100;
     } else {
@@ -78,7 +78,7 @@ const calculateProfitPercentage = (currentPrice, entryPrice, direction) => {
  */
 const calculateProtectionPrice = (entryPrice, direction, userOption) => {
     // 从用户配置中获取保护止损价格比例，默认为2%
-    const protectionPercentage =  2;
+    const protectionPercentage = 2;
 
     if (direction === 'buy') {
         // 买入单：入场价格*(1-保护比例)，例如100 * 0.98 = 98
@@ -118,25 +118,22 @@ const handleUserProfitProtection = async (userOption) => {
         logger.info(`开始处理用户 ${userOption.userId} 的盈利保护`);
 
         // 从 API 获取用户的最新持仓信息，使用重试机制
-        const positions = await retryAsync(
-            () => getUserPositions(userOption),
-            2, // 最大重试2次
-            1000 // 每次重试间隔1000ms
-        );
+        const positions = await getUserPositions(userOption)
+
+
 
         // 获取用户的持仓币种列表
         const positionSymbols = positions.map(p => p.symbol.toUpperCase());
         logger.info(`用户 ${userOption.userId} 的持仓币种:`, positionSymbols);
 
-        // 查询用户的 pending 状态订单
-        const pendingOrders = await retryAsync(
-            () => TradeRecordModel.find({
-                userId: userOption.userId,
-                status: 'pending'
-            }),
-            2,
-            1000
-        );
+        // 查询用户的 pending 状态订单，根据用户配置的平台过滤
+        const userPlatform = userOption.belong?.toLowerCase() || 'binance';
+        const pendingOrders = await TradeRecordModel.find({
+            userId: userOption.userId,
+            status: 'pending',
+            exchange: userPlatform
+        })
+
 
         logger.info(`用户 ${userOption.userId} 有 ${pendingOrders.length} 个 pending 状态的订单`);
 
@@ -144,22 +141,18 @@ const handleUserProfitProtection = async (userOption) => {
         for (const order of pendingOrders) {
             const orderSymbol = order.symbol.toUpperCase();
             const orderExchange = order.exchange || 'binance'; // 默认为binance
-            
+
             // 检查该订单在对应交易所是否有持仓
-            const hasPosition = positions.some(p => 
-                p.symbol.toUpperCase() === orderSymbol && 
+            const hasPosition = positions.some(p =>
+                p.symbol.toUpperCase() === orderSymbol &&
                 (p.exchange || 'binance') === orderExchange
             );
-            
+
             if (!hasPosition) {
                 logger.info(`用户 ${userOption.userId} 的 ${orderSymbol} 订单在 ${orderExchange} 交易所不在持仓中，将状态改为 cancelled`);
-                await retryAsync(
-                    () => TradeRecordModel.findByIdAndUpdate(order._id, {
-                        status: 'cancelled'
-                    }),
-                    2,
-                    1000
-                );
+                awaitTradeRecordModel.findByIdAndUpdate(order._id, {
+                    status: 'cancelled'
+                });
             }
         }
 
@@ -169,7 +162,7 @@ const handleUserProfitProtection = async (userOption) => {
         }
 
         logger.info(`用户 ${userOption.userId} 有 ${positions.length} 个持仓`);
-        
+
         // 获取用户在 TradeRecordModel 中的币种列表
         const tradeRecordSymbols = pendingOrders.map(o => o.symbol.toUpperCase());
         logger.info(`用户 ${userOption.userId} 在 TradeRecordModel 中的币种:`, tradeRecordSymbols);
@@ -188,16 +181,16 @@ const handleUserProfitProtection = async (userOption) => {
         // 对每个持仓处理盈利保护
         for (const position of positions) {
             const { symbol, direction, exchange = 'binance' } = position;
-            
+
             const entryPrice = position.entryPrice || position.price || position.avgPrice;
             const currentPrice = position.currentPrice || position.markPrice || position.lastPrice;
             const profitData = position.profitPercentage || position.unrealisedPnl || position.pnl;
-            
+
             if (!symbol || !direction) {
                 logger.warn(`持仓数据缺少基本信息，跳过: ${JSON.stringify(position)}`);
                 continue;
             }
-            
+
             // 检查该币种是否在 TradeRecordModel 中
             const positionSymbolUpper = symbol.toUpperCase();
             if (!tradeRecordSymbols.includes(positionSymbolUpper)) {
@@ -208,14 +201,14 @@ const handleUserProfitProtection = async (userOption) => {
             let actualProfitPercentage = 0;
             let hasValidProfit = false;
             let calculatedEntryPrice = entryPrice;
-            
+
             if (profitData !== undefined) {
                 const profitValue = parseFloat(profitData);
-                
+
                 if (!isNaN(profitValue)) {
                     if (profitValue > 0) {
                         hasValidProfit = true;
-                        
+
                         // 根据交易所类型判断 profitData 是百分比还是金额
                         if (exchange === 'binance') {
                             // Binance: profitData 是金额，需要重新计算百分比
@@ -279,12 +272,7 @@ const handleUserProfitProtection = async (userOption) => {
             if (actualProfitPercentage >= profitProtectionThreshold) {
                 const protectionPrice = calculateProtectionPrice(parseFloat(calculatedEntryPrice), direction, userOption);
                 logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${actualProfitPercentage.toFixed(2)}%，达到触发阈值 ${profitProtectionThreshold}%，使用入场价格 ${calculatedEntryPrice}，设置保护止损价格为 ${protectionPrice.toFixed(4)}`);
-
-                const updateResult = await retryAsync(
-                    () => updateProtectionStopLoss(userOption, symbol, direction, protectionPrice, exchange),
-                    3,
-                    1500
-                );
+                const updateResult = await updateProtectionStopLoss(userOption, symbol, direction, protectionPrice, exchange)
                 if (updateResult.success) {
                     logger.info(`用户 ${userOption.userId} 的 ${symbol} 保护止损单更新成功`);
                     result.updatedCount++;
@@ -296,7 +284,7 @@ const handleUserProfitProtection = async (userOption) => {
                 logger.info(`用户 ${userOption.userId} 的 ${symbol} 盈利 ${actualProfitPercentage.toFixed(2)}%，未达到触发阈值 ${profitProtectionThreshold}%，跳过`);
             }
         }
-        
+
         logger.info(`用户 ${userOption.userId} 的盈利保护处理完成，更新了 ${result.updatedCount} 个止损单`);
         return result;
     } catch (error) {
@@ -316,24 +304,18 @@ const handleUserProfitProtection = async (userOption) => {
 export const handleProfitProtection = async (req, res) => {
     try {
         logger.info('开始处理盈利保护（自动模式）');
-        
+
         // 查询所有开启了盈利保护的用户
-        const usersWithProfitProtection = await retryAsync(
-            () => UserTradeOptionsModel.find({
-                isProfitProtectionEnabled: true,
-                isActive: true
-            }),
-            2,
-            1000
-        );
-        
+        const usersWithProfitProtection = await UserTradeOptionsModel.find({
+            isProfitProtectionEnabled: true,
+            isActive: true
+        })
         if (usersWithProfitProtection.length === 0) {
             logger.info('没有开启盈利保护的用户，退出处理');
             return res.status(200).json({ success: true, message: '没有开启盈利保护的用户' });
         }
-
         logger.info(`找到 ${usersWithProfitProtection.length} 个开启了盈利保护的用户`);
-        
+
         // 对每个用户处理盈利保护
         const results = [];
         for (const userOption of usersWithProfitProtection) {
@@ -341,12 +323,11 @@ export const handleProfitProtection = async (req, res) => {
             results.push({ userId: userOption.userId, ...userResult });
         }
 
-        logger.info('盈利保护处理完成（自动模式）');
-        return res.status(200).json({ 
-            success: true, 
-            message: '盈利保护处理完成', 
+        return res.status(200).json({
+            success: true,
+            message: '盈利保护处理完成',
             mode: 'auto',
-            data: results 
+            data: results
         });
     } catch (error) {
         logger.error('处理盈利保护时出错:', error);
