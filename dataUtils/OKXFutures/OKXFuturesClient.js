@@ -197,6 +197,7 @@ class OKXClient {
             }
 
             const orderData = {
+                isTradeBorrowMode: false,
                 instId: params.instId,
                 tdMode: params.tdMode || 'cross',
                 side: params.side,
@@ -213,7 +214,7 @@ class OKXClient {
             if (params.attachAlgoOrds) {
                 orderData.attachAlgoOrds = [params.attachAlgoOrds];
             }
-            console.log("orderData",orderData)
+            console.log("orderData", orderData)
             const response = await this.client.post('/api/v5/trade/order', orderData);
             return response.data[0];
         } catch (error) {

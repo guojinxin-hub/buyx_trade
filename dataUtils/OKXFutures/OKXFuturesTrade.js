@@ -333,8 +333,8 @@ class OKXFuturesTrader {
                             side: direction,
                             size: size, // 100 USDT
                             attachAlgoOrds: {
-                                tpOrdPx: takeProfitPrice, // 止盈价
-                                slTriggerPx: stopLossPrice, // 止损触发价
+                                tpOrdPx: `${takeProfitPrice}`, // 止盈价
+                                slTriggerPx: `${stopLossPrice}`, // 止损触发价
                                 slOrdPx: -1, // -1表示市价止损
                                 slTriggerPxType: 'last', // 最新价触发
                                 tpOrdKind: "limit"
