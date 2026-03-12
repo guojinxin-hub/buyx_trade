@@ -103,14 +103,14 @@ export const updateProtectionStopLoss = async (req, res) => {
         const formattedPrice = formatPrice(protectionPrice.toString(), Number(priceStep));
         
         if (Number(formattedPrice) > 0) {
-            // 4. 清除该合约所有的条件单，包括止损和止盈
+            // 4. 清除该合约的止损条件单（只清除止损，保留止盈）
             try {
-                // 先尝试清除所有类型的条件单
-                await trader.cancelAllOrders(`${symbol}USDT`);
+                // 只清除止损类型的条件单，避免影响止盈单
+                await trader.cancelOrders(`${symbol}USDT`, 'stop_loss');
                 // 增加等待时间，确保币安API有足够的时间处理清除操作
                 await new Promise(resolve => setTimeout(resolve, 500));
             } catch (e) {
-                console.log("清除旧条件单失败", e);
+                console.log("清除旧止损单失败", e);
             }
             
             // 5. 创建新的保护止损条件单
@@ -127,9 +127,9 @@ export const updateProtectionStopLoss = async (req, res) => {
                 console.log("创建保护止损单失败", e);
                 // 检查是否是因为重复订单错误
                 if (e.message.includes("An open stop or take profit order with GTE and closePosition in the direction is existing")) {
-                    // 再次尝试清除所有订单
+                    // 再次尝试清除止损订单（只清除止损，保留止盈）
                     try {
-                        await trader.cancelAllOrders(`${symbol}USDT`);
+                        await trader.cancelOrders(`${symbol}USDT`, 'stop_loss');
                         await new Promise(resolve => setTimeout(resolve, 500));
                         // 再次尝试创建订单
                         await trader.client.placeAlgoOrder(`${symbol}USDT`, {

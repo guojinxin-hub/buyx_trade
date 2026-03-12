@@ -19,9 +19,9 @@ export const apiTrade = async ({tradeData, userOptions}) => {
     }
 }
 
-export const updateProtectionStopLoss = async (userOption, symbol, direction, protectionPrice, exchange) => {
+export const updateProtectionStopLoss = async (userOption, symbol, direction, protectionPrice, exchange, entryPrice) => {
     try {
-        console.log(`更新保护止损单: 用户 ${userOption.userId}, 交易对 ${symbol}, 方向 ${direction}, 价格 ${protectionPrice}, 交易所 ${exchange}`);
+        console.log(`更新保护止损单: 用户 ${userOption.userId}, 交易对 ${symbol}, 方向 ${direction}, 价格 ${protectionPrice}, 交易所 ${exchange}, 入场价 ${entryPrice}`);
 
         // 这里可以根据需要添加具体的实现逻辑
         // 例如，直接调用对应的交易所实现
@@ -32,7 +32,8 @@ export const updateProtectionStopLoss = async (userOption, symbol, direction, pr
                 userOptions: userOption,
                 symbol,
                 direction,
-                protectionPrice
+                protectionPrice,
+                entryPrice
             }
         };
 
