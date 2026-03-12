@@ -216,6 +216,7 @@ class OKXClient {
             }
             console.log("orderData", orderData)
             const response = await this.client.post('/api/v5/trade/order', orderData);
+            console.log("response", response)
             return response.data[0];
         } catch (error) {
             throw new Error(`Failed to place order: ${error.message}`);
