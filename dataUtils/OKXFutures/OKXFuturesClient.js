@@ -184,9 +184,9 @@ class OKXClient {
                 const tickSz = parseFloat(instrument.tickSz);
                 const decimals = Math.abs(Math.log10(tickSz));
 
-                if (params.attachAlgoOrds.tpOrdPx) {
-                    params.attachAlgoOrds.tpOrdPx = parseFloat(
-                        params.attachAlgoOrds.tpOrdPx.toFixed(decimals)
+                if (params.attachAlgoOrds.tpTriggerPx) {
+                    params.attachAlgoOrds.tpTriggerPx = parseFloat(
+                        params.attachAlgoOrds.tpTriggerPx.toFixed(decimals)
                     );
                 }
                 if (params.attachAlgoOrds.slTriggerPx) {
