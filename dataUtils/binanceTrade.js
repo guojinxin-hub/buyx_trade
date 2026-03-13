@@ -235,7 +235,7 @@ export const getBinancePositions = async (userOptions) => {
                     const priceDiff = positionAmt > 0
                         ? (markPrice - entryPrice) / entryPrice  // 做多
                         : (entryPrice - markPrice) / entryPrice; // 做空
-                    profitPercentage = priceDiff * leverage * 100;
+                    profitPercentage = priceDiff * 100;
                 }
                 
                

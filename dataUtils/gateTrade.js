@@ -373,7 +373,7 @@ export const getGatePositions = async (userOptions) => {
                     const priceDiff = position.size > 0 
                         ? (markPrice - entryPrice) / entryPrice  // 做多
                         : (entryPrice - markPrice) / entryPrice; // 做空
-                    profitPercentage = priceDiff * leverage * 100;
+                    profitPercentage = priceDiff * 100;
                 }
                 return {
                     symbol: position.contract.replace('_USDT', ''),
