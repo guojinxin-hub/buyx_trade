@@ -184,9 +184,9 @@ class OKXClient {
                 const tickSz = parseFloat(instrument.tickSz);
                 const decimals = Math.abs(Math.log10(tickSz));
 
-                if (params.attachAlgoOrds.tpOrdPx) {
-                    params.attachAlgoOrds.tpOrdPx = parseFloat(
-                        params.attachAlgoOrds.tpOrdPx.toFixed(decimals)
+                if (params.attachAlgoOrds.tpTriggerPx) {
+                    params.attachAlgoOrds.tpTriggerPx = parseFloat(
+                        params.attachAlgoOrds.tpTriggerPx.toFixed(decimals)
                     );
                 }
                 if (params.attachAlgoOrds.slTriggerPx) {
@@ -197,6 +197,7 @@ class OKXClient {
             }
 
             const orderData = {
+                isTradeBorrowMode: false,
                 instId: params.instId,
                 tdMode: params.tdMode || 'cross',
                 side: params.side,
@@ -213,8 +214,9 @@ class OKXClient {
             if (params.attachAlgoOrds) {
                 orderData.attachAlgoOrds = [params.attachAlgoOrds];
             }
-            console.log("orderData",orderData)
+            console.log("orderData", orderData)
             const response = await this.client.post('/api/v5/trade/order', orderData);
+            console.log("response", response)
             return response.data[0];
         } catch (error) {
             throw new Error(`Failed to place order: ${error.message}`);
