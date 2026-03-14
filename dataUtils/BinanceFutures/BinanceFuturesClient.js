@@ -9,6 +9,10 @@ class BinanceFuturesClient {
             ? 'https://testnet.binancefuture.com'
             : 'https://fapi.binance.com';
         this.recvWindow = 5000;
+        // 添加请求队列和延迟机制
+        this.requestQueue = [];
+        this.isProcessingQueue = false;
+        this.requestDelay = 100; // 请求间隔时间（毫秒），可根据需要调整
     }
 
     // 生成签名
@@ -21,6 +25,54 @@ class BinanceFuturesClient {
 
     // 发送HTTP请求
     async _sendRequest(method, endpoint, params = {}, isSigned = false) {
+        // 将请求添加到队列中
+        return new Promise((resolve, reject) => {
+            this.requestQueue.push({
+                method,
+                endpoint,
+                params,
+                isSigned,
+                resolve,
+                reject
+            });
+
+            // 如果当前没有在处理队列，则开始处理
+            if (!this.isProcessingQueue) {
+                this._processRequestQueue();
+            }
+        });
+    }
+
+    // 处理请求队列
+    async _processRequestQueue() {
+        if (this.isProcessingQueue || this.requestQueue.length === 0) {
+            return;
+        }
+
+        this.isProcessingQueue = true;
+
+        while (this.requestQueue.length > 0) {
+            const request = this.requestQueue.shift();
+            const { method, endpoint, params, isSigned, resolve, reject } = request;
+
+            try {
+                const result = await this._executeRequest(method, endpoint, params, isSigned);
+                resolve(result);
+            } catch (error) {
+                reject(error);
+            }
+
+            // 添加延迟，避免请求过于频繁
+            if (this.requestQueue.length > 0) {
+                await new Promise(resolve => setTimeout(resolve, this.requestDelay));
+            }
+        }
+
+        this.isProcessingQueue = false;
+    }
+
+    // 执行单个请求
+    async _executeRequest(method, endpoint, params = {}, isSigned = false) {
         return new Promise((resolve, reject) => {
             let queryString = Object.keys(params)
                 .map(key => `${key}=${encodeURIComponent(params[key])}`)
@@ -52,8 +104,9 @@ class BinanceFuturesClient {
                     'Content-Type': 'application/json',
                     'X-MBX-APIKEY': this.apiKey
                 },
-                timeout: 10000 // 添加超时时间
+                timeout: 100000 // 添加超时时间
             };
+        console.log(2222222,options)
 
             const req = https.request(options, (res) => {
                 let data = '';
@@ -77,7 +130,11 @@ class BinanceFuturesClient {
             });
 
             req.on('error', (error) => {
-                console.error(`HTTPS request error: ${error.message}`);
+                console.error(`HTTPS request error: ${error}`);
+                console.error(`Error details:`, error);
+                if (error.errors) {
+                    console.error(`Sub-errors:`, error.errors);
+                }
                 reject(error);
             });
 
@@ -147,7 +204,9 @@ class BinanceFuturesClient {
             orderId
         }, true);
     }
-
+    async getOpenOrders(symbol) {
+        return this._sendRequest('GET', '/fapi/v1/openOrders', { symbol }, true);
+    }
     // 通用下单方法
     async placeOrder(symbol, orderParams) {
         const params = {
@@ -240,6 +299,8 @@ class BinanceFuturesClient {
             return await this.getCurrentPrice(symbol);
         }
     }
+
+
 }
 
 module.exports = BinanceFuturesClient;

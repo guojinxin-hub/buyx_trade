@@ -88,8 +88,9 @@ export const updateProtectionStopLoss = async (req, res) => {
 
         // 1. 初始化 API 客户端
         const { apiKey, apiSecret, isTestOption } = userOptions
-        const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
 
+        const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
+      
         // 2. 获取合约详细信息
         const symbols = await trader.getSymbolInfo();
         const symbolInfo = symbols.find(s => s.symbol === `${symbol}USDT`);
@@ -223,9 +224,9 @@ export const getBinancePositions = async (userOptions) => {
                 const leverage = parseFloat(position.leverage) || 1;
                 const unrealizedPnl = parseFloat(position.unrealizedProfit) || 0; // 实际盈亏
                 const positionInitialMargin = parseFloat(position.positionInitialMargin) || 0; // 仓位初始保证金
-                
+
                 let profitPercentage = 0;
-                
+
                 // 如果有实际盈亏数据，则使用保证金计算收益率
                 if (positionInitialMargin > 0) {
                     // 收益率 = (未实现盈亏 / 仓位初始保证金) * 100%
@@ -237,8 +238,8 @@ export const getBinancePositions = async (userOptions) => {
                         : (entryPrice - markPrice) / entryPrice; // 做空
                     profitPercentage = priceDiff * 100;
                 }
-                
-               
+
+
 
                 positionsWithPrice.push({
                     symbol: position.symbol.replace('USDT', ''),

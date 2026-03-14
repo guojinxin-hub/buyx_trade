@@ -1,7 +1,6 @@
 // binance-futures-trader.js
 const BinanceFuturesClient = require('./BinanceFuturesClient');
-const {formatPrice} = require("../formatPrice");
-
+const { formatPrice } = require("../formatPrice");
 // 网络请求重试函数
 const retryRequest = async (fn, retries = 3, delay = 2000) => {
     for (let i = 0; i < retries; i++) {
@@ -340,13 +339,14 @@ class BinanceFuturesTrader {
      */
     async cancelOrders(symbol, type = 'all') {
         try {
-            const openOrders = await retryRequest(() => this.client._sendRequest('GET', '/fapi/v1/openOrders', {symbol}, true));
+            const openOrders = await this.client.getOpenOrders(symbol);
+            console.log(44444444, openOrders)
             let cancelledCount = 0;
 
             for (const order of openOrders) {
                 // 根据类型过滤订单
                 let shouldCancel = false;
-                
+
                 if (type === 'all') {
                     shouldCancel = true;
                 } else if (type === 'stop_loss' && order.type === 'STOP_MARKET') {
@@ -354,7 +354,7 @@ class BinanceFuturesTrader {
                 } else if (type === 'take_profit' && order.type === 'TAKE_PROFIT_MARKET') {
                     shouldCancel = true;
                 }
-                
+
                 if (shouldCancel) {
                     await retryRequest(() => this.client.cancelOrder(symbol, order.orderId));
                     console.log(`已取消订单: ${order.orderId}, 类型: ${order.type}`);
@@ -362,7 +362,7 @@ class BinanceFuturesTrader {
                 }
             }
 
-            return {success: true, cancelledCount: cancelledCount};
+            return { success: true, cancelledCount: cancelledCount };
         } catch (error) {
             console.error('取消订单失败:', error.message);
             throw error;
