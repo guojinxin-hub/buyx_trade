@@ -86,6 +86,11 @@ export const getUserPositions = async (userOption) => {
                 // 导入 Binance 交易所的获取持仓函数
                 const {getBinancePositions} = await import('./binanceTrade');
                 return await getBinancePositions(userOption);
+            case 'OKX':
+                console.log('调用 OKX 交易所的持仓信息获取');
+                // 导入 OKX 交易所的获取持仓函数
+                const {getOKXPositions} = await import('./okxTrade');
+                return await getOKXPositions(userOption);
             default:
                 console.error('不支持的交易所:', belong);
                 return [];

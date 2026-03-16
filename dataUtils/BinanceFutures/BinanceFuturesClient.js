@@ -106,7 +106,6 @@ class BinanceFuturesClient {
                 },
                 timeout: 100000 // 添加超时时间
             };
-        console.log(2222222,options)
 
             const req = https.request(options, (res) => {
                 let data = '';

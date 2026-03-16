@@ -65,3 +65,99 @@ export const okxTrade = async ({tradeData, userOptions}) => {
         console.error('交易失败:', error);
     }
 }
+
+/**
+ * 获取 OKX 交易所的持仓信息
+ * @param {Object} userOptions - 用户配置
+ * @returns {Promise<Array>} 持仓信息列表
+ */
+// 网络请求重试函数
+const retryRequest = async (fn, retries = 3, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await fn();
+        } catch (error) {
+            console.error(`请求失败，第${i + 1}次尝试:`, error.message);
+            if (i === retries - 1) {
+                // 最后一次尝试失败，抛出错误
+                throw error;
+            }
+            // 等待一段时间再重试
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+};
+
+export const getOKXPositions = async (userOptions) => {
+    try {
+        const { apiKey, apiSecret, passphrase, isTestOption } = userOptions;
+        const trader = new OKXFuturesTrader({
+            apiKey: decrypt(apiKey),
+            secretKey: decrypt(apiSecret),
+            passphrase: passphrase,
+            isSimulated: isTestOption
+        });
+
+        // 使用重试机制获取持仓信息
+        const positions = await retryRequest(() => trader.getPositions(), 3, 3000);
+
+        // 添加延迟，避免API调用过于频繁
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        if (!positions || !Array.isArray(positions)) {
+            return [];
+        }
+
+        const positionsWithPrice = [];
+        
+        for (const position of positions) {
+            if (parseFloat(position.pos) !== 0) {
+                const posAmt = parseFloat(position.pos);
+                const direction = posAmt > 0 ? 'buy' : 'sell';
+
+                // 提取交易对符号
+                const instId = position.instId;
+                const symbol = instId.replace('-USDT-SWAP', '');
+
+                // 使用实际的未实现盈亏和初始保证金计算真实收益率
+                const entryPrice = parseFloat(position.avgPx) || 0;
+                const markPrice = parseFloat(position.markPx) || 0;
+                const leverage = parseFloat(position.lever) || 1;
+                const unrealizedPnl = parseFloat(position.unrealizedPnl) || 0; // 实际盈亏
+                const positionInitialMargin = parseFloat(position.mgn) || 0; // 仓位保证金
+
+                let profitPercentage = 0;
+
+                // 如果有实际盈亏数据，则使用保证金计算收益率
+                if (positionInitialMargin > 0) {
+                    // 收益率 = (未实现盈亏 / 仓位保证金) * 100%
+                    profitPercentage = (unrealizedPnl / positionInitialMargin) * 100;
+                } else if (entryPrice > 0 && markPrice > 0) {
+                    // 备用计算方式：使用价格变动计算
+                    const priceDiff = posAmt > 0
+                        ? (markPrice - entryPrice) / entryPrice  // 做多
+                        : (entryPrice - markPrice) / entryPrice; // 做空
+                    profitPercentage = priceDiff * 100;
+                }
+
+                positionsWithPrice.push({
+                    symbol: symbol,
+                    direction: direction,
+                    entryPrice: position.avgPx,
+                    avgPrice: position.avgPx,
+                    markPrice: position.markPx,
+                    lastPrice: position.last,
+                    currentPrice: position.last,
+                    size: posAmt,
+                    exchange: 'okx',
+                    unrealisedPnl: profitPercentage // 返回计算后的收益率百分比
+                });
+            }
+        }
+
+        return positionsWithPrice;
+    } catch (error) {
+        console.error('获取 OKX 交易所持仓信息出错:', error.message);
+        return [];
+    }
+};

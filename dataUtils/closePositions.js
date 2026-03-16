@@ -12,6 +12,9 @@ let gateClient = new GateApi.ApiClient();
 // Binance API
 const BinanceFuturesTrade = require('./BinanceFutures/BinanceFuturesTrade');
 
+// OKX API
+const OKXFuturesTrade = require('./OKXFutures/OKXFuturesTrade');
+
 // 网络请求重试函数
 const retryRequest = async (fn, retries = 3, delay = 2000) => {
     for (let i = 0; i < retries; i++) {
@@ -32,7 +35,7 @@ const retryRequest = async (fn, retries = 3, delay = 2000) => {
 /**
  * 为指定用户执行平仓操作
  * @param {Object} params - 参数对象
- * @param {Array} params.tradeData - 交易数据
+ * @param {Array} params.tradeData - 交易数据（可选，不提供时自动获取所有持仓）
  * @param {Object} params.userOptions - 用户交易配置
  * @returns {Promise<void>}
  */
@@ -47,6 +50,9 @@ export const executeClosePositions = async ({tradeData, userOptions}) => {
             case 'Binance':
                 await executeBinanceClosePositions({tradeData, userOptions});
                 break;
+            case 'OKX':
+                await executeOKXClosePositions({tradeData, userOptions});
+                break;
             default:
                 console.log(`不支持的交易所类型: ${belong}`);
                 break;
@@ -60,7 +66,7 @@ export const executeClosePositions = async ({tradeData, userOptions}) => {
 /**
  * 为Gate交易所执行平仓操作
  * @param {Object} params - 参数对象
- * @param {Array} params.tradeData - 交易数据
+ * @param {Array} params.tradeData - 交易数据（可选，不提供时自动获取所有持仓）
  * @param {Object} params.userOptions - 用户交易配置
  * @returns {Promise<void>}
  */
@@ -81,10 +87,29 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
         const futureAccount = await retryRequest(() => futuresApi.listFuturesAccounts(settle));
         await saveUserBalance(userOptions.userId, futureAccount.body);
         
-        // 遍历处理每个交易信号
-        for (const item of tradeData) {
+        let symbolsToClose = [];
+        
+        if (tradeData && tradeData.length > 0) {
+            // 使用提供的交易数据
+            symbolsToClose = tradeData.map(item => item.symbol);
+        } else {
+            // 自动获取所有持仓
+            console.log(`自动获取Gate交易所的所有持仓`);
+            const positions = await retryRequest(() => futuresApi.listFuturesPositions(settle));
+            if (positions && positions.body) {
+                symbolsToClose = positions.body
+                    .filter(position => position.size !== 0)
+                    .map(position => {
+                        // 从合约名称中提取交易对符号，如 "BTC_USDT" -> "BTC"
+                        return position.contract.replace('_USDT', '');
+                    });
+            }
+            console.log(`找到 ${symbolsToClose.length} 个持仓`);
+        }
+        
+        // 遍历处理每个交易对
+        for (const symbol of symbolsToClose) {
             try {
-                const {symbol} = item;
                 console.log(`执行平仓操作: ${symbol}`);
                 
                 // 获取当前持仓
@@ -138,7 +163,7 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
                     }
                 }
             } catch (e) {
-                console.error(`执行 ${item.symbol} 平仓操作失败:`, e.message);
+                console.error(`执行 ${symbol} 平仓操作失败:`, e.message);
                 // 继续处理下一个交易对
                 continue;
             }
@@ -154,7 +179,7 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
 /**
  * 为Binance交易所执行平仓操作
  * @param {Object} params - 参数对象
- * @param {Array} params.tradeData - 交易数据
+ * @param {Array} params.tradeData - 交易数据（可选，不提供时自动获取所有持仓）
  * @param {Object} params.userOptions - 用户交易配置
  * @returns {Promise<void>}
  */
@@ -175,10 +200,29 @@ export const executeBinanceClosePositions = async ({tradeData, userOptions}) => 
         };
         await saveUserBalance(userOptions.userId, accountFunds);
         
-        // 遍历处理每个交易信号
-        for (const item of tradeData) {
+        let symbolsToClose = [];
+        
+        if (tradeData && tradeData.length > 0) {
+            // 使用提供的交易数据
+            symbolsToClose = tradeData.map(item => item.symbol);
+        } else {
+            // 自动获取所有持仓
+            console.log(`自动获取Binance交易所的所有持仓`);
+            const positions = await retryRequest(() => trader.getPositions());
+            if (positions && positions.length > 0) {
+                symbolsToClose = positions
+                    .filter(position => parseFloat(position.positionAmt) !== 0)
+                    .map(position => {
+                        // 从交易对中提取基础货币，如 "BTCUSDT" -> "BTC"
+                        return position.symbol.replace('USDT', '');
+                    });
+            }
+            console.log(`找到 ${symbolsToClose.length} 个持仓`);
+        }
+        
+        // 遍历处理每个交易对
+        for (const symbol of symbolsToClose) {
             try {
-                const {symbol} = item;
                 console.log(`执行平仓操作: ${symbol}`);
                 
                 // 执行平仓操作
@@ -207,7 +251,7 @@ export const executeBinanceClosePositions = async ({tradeData, userOptions}) => 
                     // 继续执行，不因记录更新失败而中断流程
                 }
             } catch (e) {
-                console.error(`执行 ${item.symbol} 平仓操作失败:`, e.message);
+                console.error(`执行 ${symbol} 平仓操作失败:`, e.message);
                 // 继续处理下一个交易对
                 continue;
             }
@@ -216,6 +260,99 @@ export const executeBinanceClosePositions = async ({tradeData, userOptions}) => 
         console.log(`为用户 ${userOptions.userId} 在Binance交易所的平仓操作执行完成`);
     } catch (error) {
         console.error(`为用户 ${userOptions.userId} 在Binance交易所执行平仓操作失败:`, error.message);
+        throw error;
+    }
+};
+
+/**
+ * 为OKX交易所执行平仓操作
+ * @param {Object} params - 参数对象
+ * @param {Array} params.tradeData - 交易数据（可选，不提供时自动获取所有持仓）
+ * @param {Object} params.userOptions - 用户交易配置
+ * @returns {Promise<void>}
+ */
+export const executeOKXClosePositions = async ({tradeData, userOptions}) => {
+    try {
+        console.log(`为用户 ${userOptions.userId} 在OKX交易所执行平仓操作`);
+        
+        // 初始化 OKX 客户端
+        const {apiKey, apiSecret, passphrase, isTestOption} = userOptions;
+        const trader = new OKXFuturesTrade({
+            apiKey: decrypt(apiKey),
+            secretKey: decrypt(apiSecret),
+            passphrase: passphrase,
+            isSimulated: isTestOption
+        });
+        
+        // 获取账户信息
+        const accountInfo = await retryRequest(() => trader.getAccountInfo());
+        const accountFunds = {
+            total: accountInfo.balance.total,
+            unrealisedPnl: accountInfo.balance.unrealisedPnl,
+            available: accountInfo.balance.available
+        };
+        await saveUserBalance(userOptions.userId, accountFunds);
+        
+        let symbolsToClose = [];
+        
+        if (tradeData && tradeData.length > 0) {
+            // 使用提供的交易数据
+            symbolsToClose = tradeData.map(item => item.symbol);
+        } else {
+            // 自动获取所有持仓
+            console.log(`自动获取OKX交易所的所有持仓`);
+            const positions = await retryRequest(() => trader.getPositions());
+            if (positions && positions.length > 0) {
+                symbolsToClose = positions
+                    .filter(position => parseFloat(position.position) !== 0)
+                    .map(position => {
+                        // 从交易对中提取基础货币，如 "BTC-USDT-SWAP" -> "BTC"
+                        return position.instrumentId.replace('-USDT-SWAP', '');
+                    });
+            }
+            console.log(`找到 ${symbolsToClose.length} 个持仓`);
+        }
+        
+        // 遍历处理每个交易对
+        for (const symbol of symbolsToClose) {
+            try {
+                console.log(`执行平仓操作: ${symbol}`);
+                
+                // 执行平仓操作
+                const result = await retryRequest(() => trader.closePosition(`${symbol}-USDT-SWAP`));
+                console.log(`平仓结果: ${symbol}`, result);
+                
+                // 更新交易记录状态为已平仓
+                try {
+                    await TradeRecordModel.updateMany(
+                        {
+                            userId: userOptions.userId,
+                            symbol: symbol,
+                            status: { $ne: 'closed' }
+                        },
+                        {
+                            $set: {
+                                status: 'closed',
+                                closeTime: new Date(),
+                                closePrice: result.filledPrice || null
+                            }
+                        }
+                    );
+                    console.log(`已更新 ${symbol} 的交易记录状态为已平仓`);
+                } catch (e) {
+                    console.error(`更新交易记录状态失败:`, e.message);
+                    // 继续执行，不因记录更新失败而中断流程
+                }
+            } catch (e) {
+                console.error(`执行 ${symbol} 平仓操作失败:`, e.message);
+                // 继续处理下一个交易对
+                continue;
+            }
+        }
+        
+        console.log(`为用户 ${userOptions.userId} 在OKX交易所的平仓操作执行完成`);
+    } catch (error) {
+        console.error(`为用户 ${userOptions.userId} 在OKX交易所执行平仓操作失败:`, error.message);
         throw error;
     }
 };

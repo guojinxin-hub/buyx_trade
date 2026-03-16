@@ -340,7 +340,6 @@ class BinanceFuturesTrader {
     async cancelOrders(symbol, type = 'all') {
         try {
             const openOrders = await this.client.getOpenOrders(symbol);
-            console.log(44444444, openOrders)
             let cancelledCount = 0;
 
             for (const order of openOrders) {
