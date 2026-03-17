@@ -62,6 +62,6 @@ export const okxTrade = async ({tradeData, userOptions}) => {
             }
         }
     } catch (error) {
-        console.error('交易失败:', error);
+        console.error('OKX交易失败:', error);
     }
 }
