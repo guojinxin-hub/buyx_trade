@@ -240,18 +240,32 @@ class OKXFuturesTrader {
      */
     async closePosition(instId) {
         try {
-            const position = await this.client.closePosition(instId);
+            // 获取持仓信息
+            const positions = await this.client.getPositions(instId);
+            const position = positions.find((p) => p.instId === instId && parseFloat(p.pos) !== 0);
+            
             if (!position) {
                 console.log('没有持仓需要平仓');
                 return null;
             }
 
-            const side = position.pos > 0 ? 'sell' : 'buy';
-            const quantity = Math.abs(position.pos);
+            // 确定平仓方向和数量
+            const pos = parseFloat(position.pos);
+            const side = pos > 0 ? 'sell' : 'buy';
+            const quantity = Math.abs(pos);
 
             console.log(`平仓: ${side.toUpperCase()} ${quantity} ${instId}`);
 
-            return await this.client.placeMarketOrder(instId, side, quantity);
+            // 执行市价平仓
+            return await this.client.placeOrder({
+                instId: instId,
+                side: side,
+                sz: quantity,
+                ordType: 'market',
+                tdMode: 'cross',
+                posSide: position.posSide || 'net',
+                reduceOnly: true
+            });
         } catch (error) {
             console.error('平仓失败:', error.message);
             throw error;

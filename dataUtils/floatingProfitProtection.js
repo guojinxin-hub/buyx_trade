@@ -223,11 +223,9 @@ async function handleUserFloatingProfitProtection(userOption) {
                         // 获取账户信息
                         const accountInfo = await retryAsync(() => futuresApi.listFuturesAccounts(settle), 3, 3000);
                         const accountData = accountInfo.body;
-
                         // 计算总浮动收益率
                         total = parseFloat(accountData.total) || 0;                           // 总资产（含浮动盈亏）
-                        unrealisedPnl = parseFloat(accountData.unrealised_pnl) || 0;        // 未实现盈亏
-                        totalFloatingProfit = unrealisedPnl;                                // 总浮动盈亏等于未实现盈亏
+                        totalFloatingProfit = parseFloat(accountData.unrealisedPnl) || 0;    // 总浮动盈亏等于未实现盈亏
                         totalBenchmark = total - totalFloatingProfit;                       // 基准总金额 = 总资产 - 浮动盈亏（即不含浮动盈亏的本金）
                         availableBalance = parseFloat(accountData.available) || 0;          // 可用余额
                         totalFloatingProfitRate = totalBenchmark > 0 ? (totalFloatingProfit / totalBenchmark) * 100 : 0; // 计算收益率 = (浮动盈亏 / 本金) * 100%
