@@ -23,13 +23,24 @@ const logger = {
  * @param {String} userId - 用户ID
  * @returns {Object} 用户的盈利保护状态
  */
-async function getProfitProtectionStatus(userId) {
+async function getProfitProtectionStatus(userId, exchange = '') {
     try {
-        let status = await ProfitProtectionStatusModel.findOne({ userId });
+        let status = await ProfitProtectionStatusModel.findOne({ userId, exchange });
         if (!status) {
-            // 创建新的状态记录
-            status = new ProfitProtectionStatusModel({ userId });
-            await status.save();
+            // 检查是否已存在该userId的旧记录（没有exchange字段的记录）
+            const oldStatus = await ProfitProtectionStatusModel.findOne({ userId });
+            if (oldStatus) {
+                // 如果存在旧记录，更新它，添加exchange字段
+                logger.info(`为用户 ${userId} 更新现有记录，添加交易所: ${exchange}`);
+                oldStatus.exchange = exchange;
+                await oldStatus.save();
+                status = oldStatus;
+            } else {
+                // 创建新的状态记录
+                status = new ProfitProtectionStatusModel({ userId, exchange });
+                await status.save();
+                logger.info(`为用户 ${userId} 创建了新的盈利保护状态记录，交易所: ${exchange}`);
+            }
         }
         return status;
     } catch (error) {
@@ -37,6 +48,7 @@ async function getProfitProtectionStatus(userId) {
         // 返回默认状态
         return {
             userId,
+            exchange,
             state: 'IDLE',
             highestProfitRate: 0,
             activatedAt: null,
@@ -54,8 +66,9 @@ async function getProfitProtectionStatus(userId) {
  */
 async function updateProfitProtectionStatus(userId, updates) {
     try {
+        const { exchange = '' } = updates;
         const status = await ProfitProtectionStatusModel.findOneAndUpdate(
-            { userId },
+            { userId, exchange },
             {
                 $set: {
                     ...updates,
@@ -76,10 +89,10 @@ async function updateProfitProtectionStatus(userId, updates) {
  * @param {String} userId - 用户ID
  * @returns {Object} 重置后的状态对象
  */
-async function resetProfitProtectionStatus(userId) {
+async function resetProfitProtectionStatus(userId, exchange = '') {
     try {
         const status = await ProfitProtectionStatusModel.findOneAndUpdate(
-            { userId },
+            { userId, exchange },
             {
                 $set: {
                     state: 'IDLE',
@@ -132,11 +145,6 @@ async function retryAsync(fn, maxRetries = 3, delay = 1000) {
         }
     }
 }
-
-/**
- * 计算总浮动收益率的逻辑已集成到主函数中
- * 不再需要单独的函数
- */
 
 /**
  * 执行全仓平仓
@@ -192,7 +200,6 @@ async function handleUserFloatingProfitProtection(userOption) {
                         const BinanceFuturesTrade = require('./BinanceFutures/BinanceFuturesTrade');
                         const { decrypt } = require('./utils');
                         const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
-
                         // 获取账户信息
                         const accountInfo = await retryAsync(() => trader.checkUserAccount(), 3, 3000);
                         const { availableBalance: binanceAvailableBalance, totalUnrealizedProfit, totalWalletBalance } = accountInfo;
@@ -258,18 +265,12 @@ async function handleUserFloatingProfitProtection(userOption) {
             logger.error(`获取账户信息和持仓信息时出错:`, error);
             return { success: false, message: '获取账户信息失败', error: error.message };
         }
-        
+
+        // 获取交易所信息
+        const exchange = userOption.belong || '';
+
         // 获取当前监控状态
-        const currentState = await getProfitProtectionStatus(userOption.userId);
-
-        logger.info(`用户 ${userOption.userId} 交易所: ${userOption.belong} 当前总浮动收益率: ${totalFloatingProfitRate.toFixed(2)}%, 监控状态: ${currentState.state}`, {
-            totalFloatingProfitRate: totalFloatingProfitRate.toFixed(2),
-            totalFloatingProfit: totalFloatingProfit.toFixed(2),
-            totalBenchmark: totalBenchmark.toFixed(2),
-            total: total.toFixed(2),
-            availableBalance: availableBalance.toFixed(2)
-        });
-
+        const currentState = await getProfitProtectionStatus(userOption.userId, exchange);
         // 规则判断
         // 如果收益率超过止盈阈值，则全部平仓
         if (totalFloatingProfitRate >= CONFIG.TAKE_PROFIT_CLOSE_VALUE) {
@@ -277,21 +278,21 @@ async function handleUserFloatingProfitProtection(userOption) {
             logger.info(`用户 ${userOption.userId} 触发主动止盈，收益率: ${totalFloatingProfitRate.toFixed(2)}% ≥ ${CONFIG.TAKE_PROFIT_CLOSE_VALUE}%`);
             await executeFullClosePositions(userOption, '主动止盈');
             await updateProfitProtectionStatus(userOption.userId, {
+                exchange,
                 state: 'TRIGGERED',
                 triggeredAt: new Date(),
                 totalFloatingProfitRate,
                 totalFloatingProfit,
                 totalBenchmark,
                 total,
-
                 availableBalance
             });
             return { success: true, message: '触发主动止盈', action: 'TAKE_PROFIT_CLOSE' };
         } else if (totalFloatingProfitRate > CONFIG.TRIGGER_PROTECTION_VALUE && totalFloatingProfitRate < CONFIG.TAKE_PROFIT_CLOSE_VALUE) {
             // 收益率在触发保护值和止盈值之间，进入监控状态
             const newHighestProfitRate = Math.max(currentState.highestProfitRate, totalFloatingProfitRate);
-            
             await updateProfitProtectionStatus(userOption.userId, {
+                exchange,
                 state: 'MONITORING',
                 highestProfitRate: newHighestProfitRate,
                 activatedAt: currentState.activatedAt || new Date(),
@@ -299,7 +300,6 @@ async function handleUserFloatingProfitProtection(userOption) {
                 totalFloatingProfit,
                 totalBenchmark,
                 total,
-
                 availableBalance
             });
 
@@ -322,52 +322,48 @@ async function handleUserFloatingProfitProtection(userOption) {
             });
             await executeFullClosePositions(userOption, '回撤保护');
             await updateProfitProtectionStatus(userOption.userId, {
+                exchange,
                 state: 'TRIGGERED',
                 triggeredAt: new Date(),
                 totalFloatingProfitRate,
                 totalFloatingProfit,
                 totalBenchmark,
                 total,
-
                 availableBalance
             });
             return { success: true, message: '触发回撤保护', action: 'PROTECTION_CLOSE' };
         } else if (totalFloatingProfitRate <= CONFIG.TRIGGER_PROTECTION_VALUE) {
             // 未达到触发条件，重置状态
             if (currentState.state !== 'IDLE') {
-                await resetProfitProtectionStatus(userOption.userId);
+                await resetProfitProtectionStatus(userOption.userId, exchange);
                 logger.info(`用户 ${userOption.userId} 重置监控状态为IDLE`, {
                     totalFloatingProfitRate: totalFloatingProfitRate.toFixed(2),
                     totalFloatingProfit: totalFloatingProfit.toFixed(2),
                     totalBenchmark: totalBenchmark.toFixed(2),
                     total: total.toFixed(2),
-    
                     availableBalance: availableBalance.toFixed(2)
                 });
             } else {
                 // 更新收益率但保持IDLE状态
                 await updateProfitProtectionStatus(userOption.userId, {
+                    exchange,
                     totalFloatingProfitRate,
                     totalFloatingProfit,
                     totalBenchmark,
                     total,
-    
                     availableBalance
                 });
-                
+
                 logger.info(`用户 ${userOption.userId} 保持IDLE状态`, {
                     totalFloatingProfitRate: totalFloatingProfitRate.toFixed(2),
                     totalFloatingProfit: totalFloatingProfit.toFixed(2),
                     totalBenchmark: totalBenchmark.toFixed(2),
                     total: total.toFixed(2),
-    
                     availableBalance: availableBalance.toFixed(2)
                 });
             }
             return { success: true, message: '未达到触发条件', action: 'NO_ACTION' };
-        }
-
-        return { success: true, message: '处理完成' };
+        } 
     } catch (error) {
         logger.error(`处理用户 ${userOption.userId} 的浮动盈利保护时出错:`, error);
         return { success: false, message: '处理浮动盈利保护时出错', error: error.message };
@@ -382,25 +378,25 @@ export const handleFloatingProfitProtection = async () => {
     try {
         logger.info('开始处理浮动盈利保护（定时任务）');
 
-        // 查询所有开启了浮动盈利保护且状态为活跃的用户
-        const usersWithFloatingProfitProtection = await UserTradeOptionsModel.find({
+        // 查询所有活跃用户
+        const allActiveUsers = await UserTradeOptionsModel.find({
             isActive: true,
             isDelete: false,
             isProfitProtectionEnabled: true
         });
-        
-        if (usersWithFloatingProfitProtection.length === 0) {
-            logger.info('没有开启浮动盈利保护的用户，退出处理');
-            return { success: true, message: '没有开启浮动盈利保护的用户' };
+
+        if (allActiveUsers.length === 0) {
+            logger.info('没有活跃用户，退出处理');
+            return { success: true, message: '没有活跃用户' };
         }
-        
-        logger.info(`找到 ${usersWithFloatingProfitProtection.length} 个开启了浮动盈利保护的用户`);
+
+        logger.info(`找到 ${allActiveUsers.length} 个活跃用户`);
 
         // 逐个处理每个用户
         const results = [];
-        for (const userOption of usersWithFloatingProfitProtection) {
-            const userResult = await handleUserFloatingProfitProtection(userOption);
-            results.push({ userId: userOption.userId, ...userResult });
+        for (const userOption of allActiveUsers) {
+            await handleUserFloatingProfitProtection(userOption);
+
         }
 
         return {
@@ -419,10 +415,10 @@ export const handleFloatingProfitProtection = async () => {
  */
 export const startFloatingProfitProtectionScheduler = () => {
     logger.info(`启动浮动盈利保护定时任务，间隔: ${CONFIG.MONITORING_INTERVAL / 1000 / 60} 分钟`);
-    
+
     // 立即执行一次
     handleFloatingProfitProtection();
-    
+
     // 设置定时任务
     setInterval(handleFloatingProfitProtection, CONFIG.MONITORING_INTERVAL);
 };
