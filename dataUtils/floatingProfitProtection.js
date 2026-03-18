@@ -27,19 +27,27 @@ async function getProfitProtectionStatus(userId, exchange = '') {
     try {
         let status = await ProfitProtectionStatusModel.findOne({ userId, exchange });
         if (!status) {
-            // 检查是否已存在该userId的旧记录（没有exchange字段的记录）
-            const oldStatus = await ProfitProtectionStatusModel.findOne({ userId });
-            if (oldStatus) {
-                // 如果存在旧记录，更新它，添加exchange字段
-                logger.info(`为用户 ${userId} 更新现有记录，添加交易所: ${exchange}`);
-                oldStatus.exchange = exchange;
-                await oldStatus.save();
-                status = oldStatus;
-            } else {
-                // 创建新的状态记录
+            // 尝试创建新记录
+            try {
                 status = new ProfitProtectionStatusModel({ userId, exchange });
                 await status.save();
                 logger.info(`为用户 ${userId} 创建了新的盈利保护状态记录，交易所: ${exchange}`);
+            } catch (saveError) {
+                if (saveError.code === 11000) {
+                    // 遇到重复键错误，返回默认状态
+                    logger.warn(`用户 ${userId} 的记录已存在，返回默认状态`);
+                    return {
+                        userId,
+                        exchange,
+                        state: 'IDLE',
+                        highestProfitRate: 0,
+                        activatedAt: null,
+                        triggeredAt: null,
+                        totalFloatingProfitRate: 0
+                    };
+                } else {
+                    throw saveError;
+                }
             }
         }
         return status;
@@ -67,16 +75,40 @@ async function getProfitProtectionStatus(userId, exchange = '') {
 async function updateProfitProtectionStatus(userId, updates) {
     try {
         const { exchange = '' } = updates;
-        const status = await ProfitProtectionStatusModel.findOneAndUpdate(
-            { userId, exchange },
-            {
-                $set: {
+        // 先尝试查找记录
+        let status = await ProfitProtectionStatusModel.findOne({ userId, exchange });
+        if (status) {
+            // 记录存在，更新它
+            status = await ProfitProtectionStatusModel.findOneAndUpdate(
+                { userId, exchange },
+                {
+                    $set: {
+                        ...updates,
+                        lastUpdatedAt: new Date()
+                    }
+                },
+                { new: true }
+            );
+        } else {
+            // 记录不存在，尝试创建新记录
+            try {
+                status = new ProfitProtectionStatusModel({
+                    userId,
+                    exchange,
                     ...updates,
                     lastUpdatedAt: new Date()
+                });
+                await status.save();
+            } catch (saveError) {
+                if (saveError.code === 11000) {
+                    // 遇到重复键错误，返回 null
+                    logger.warn(`用户 ${userId} 的记录已存在，无法更新`);
+                    return null;
+                } else {
+                    throw saveError;
                 }
-            },
-            { upsert: true, new: true }
-        );
+            }
+        }
         return status;
     } catch (error) {
         logger.error(`更新用户 ${userId} 的盈利保护状态时出错:`, error);
@@ -91,20 +123,48 @@ async function updateProfitProtectionStatus(userId, updates) {
  */
 async function resetProfitProtectionStatus(userId, exchange = '') {
     try {
-        const status = await ProfitProtectionStatusModel.findOneAndUpdate(
-            { userId, exchange },
-            {
-                $set: {
+        // 先尝试查找记录
+        let status = await ProfitProtectionStatusModel.findOne({ userId, exchange });
+        if (status) {
+            // 记录存在，更新它
+            status = await ProfitProtectionStatusModel.findOneAndUpdate(
+                { userId, exchange },
+                {
+                    $set: {
+                        state: 'IDLE',
+                        highestProfitRate: 0,
+                        activatedAt: null,
+                        triggeredAt: null,
+                        totalFloatingProfitRate: 0,
+                        lastUpdatedAt: new Date()
+                    }
+                },
+                { new: true }
+            );
+        } else {
+            // 记录不存在，尝试创建新记录
+            try {
+                status = new ProfitProtectionStatusModel({
+                    userId,
+                    exchange,
                     state: 'IDLE',
                     highestProfitRate: 0,
                     activatedAt: null,
                     triggeredAt: null,
                     totalFloatingProfitRate: 0,
                     lastUpdatedAt: new Date()
+                });
+                await status.save();
+            } catch (saveError) {
+                if (saveError.code === 11000) {
+                    // 遇到重复键错误，返回 null
+                    logger.warn(`用户 ${userId} 的记录已存在，无法重置`);
+                    return null;
+                } else {
+                    throw saveError;
                 }
-            },
-            { upsert: true, new: true }
-        );
+            }
+        }
         return status;
     } catch (error) {
         logger.error(`重置用户 ${userId} 的盈利保护状态时出错:`, error);
@@ -159,8 +219,11 @@ async function executeFullClosePositions(userOption, reason) {
         // 执行平仓
         await executeClosePositions({ userOptions: userOption });
 
+        // 获取交易所信息
+        const exchange = userOption.belong || '';
+        
         // 重置监控状态
-        await resetProfitProtectionStatus(userOption.userId);
+        await resetProfitProtectionStatus(userOption.userId, exchange);
 
         logger.info(`用户 ${userOption.userId} 全仓平仓完成`);
         return true;
