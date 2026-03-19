@@ -1,4 +1,4 @@
-import { UserTradeOptionsModel, ProfitProtectionStatusModel } from "buydip_scheme";
+import { UserTradeOptionsModel, ProfitProtectionStatusModel, FloatingProfitConfigModel } from "buydip_scheme";
 import { TradeRecordModel } from "buydip_scheme/scheme/tradeRecord";
 import { executeClosePositions } from "./closePositions";
 import { getUserPositions } from "./apiTrade";
@@ -175,12 +175,50 @@ async function resetProfitProtectionStatus(userId, exchange = '') {
 /**
  * 配置参数
  */
-const CONFIG = {
+let CONFIG = {
     TRIGGER_PROTECTION_VALUE: 4,     // 触发保护值（%）
     PROTECTION_VALUE: 1,              // 保护值（%）
     TAKE_PROFIT_CLOSE_VALUE: 10,      // 止盈平仓值（%）
     MONITORING_INTERVAL: 5 * 60 * 1000 // 监控间隔（5分钟）
 };
+
+/**
+ * 从数据库加载配置参数
+ */
+async function loadConfig() {
+    try {
+        const config = await FloatingProfitConfigModel.findOne({});
+        if (config) {
+            CONFIG = {
+                TRIGGER_PROTECTION_VALUE: config.triggerProtectionValue,
+                PROTECTION_VALUE: config.protectionValue,
+                TAKE_PROFIT_CLOSE_VALUE: config.takeProfitValue,
+                MONITORING_INTERVAL: config.monitoringInterval
+            };
+            logger.info('成功加载浮动盈利保护配置:', CONFIG);
+        } else {
+            // 如果配置不存在，创建默认配置
+            const defaultConfig = {
+                triggerProtectionValue: 4,
+                protectionValue: 1,
+                takeProfitValue: 10,
+                monitoringInterval: 5 * 60 * 1000
+            };
+            const newConfig = new FloatingProfitConfigModel(defaultConfig);
+            await newConfig.save();
+            logger.info('创建默认浮动盈利保护配置:', defaultConfig);
+        }
+    } catch (error) {
+        logger.error('加载浮动盈利保护配置失败:', error);
+        // 加载失败时使用默认配置
+    }
+}
+
+// 启动时加载配置
+loadConfig();
+
+// 每5分钟重新加载一次配置，确保配置更改能及时生效
+setInterval(loadConfig, 5 * 60 * 1000);
 
 /**
  * 通用的API调用重试函数
