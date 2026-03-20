@@ -1,4 +1,4 @@
-import { UserTradeOptionsModel, ProfitProtectionStatusModel, FloatingProfitConfigModel } from "buydip_scheme";
+import { UserTradeOptionsModel, ProfitProtectionStatusModel, FloatingProfitConfigModel, PageDataModel } from "buydip_scheme";
 import { TradeRecordModel } from "buydip_scheme/scheme/tradeRecord";
 import { executeClosePositions } from "./closePositions";
 import { getUserPositions } from "./apiTrade";
@@ -478,6 +478,15 @@ async function handleUserFloatingProfitProtection(userOption) {
 export const handleFloatingProfitProtection = async () => {
     try {
         logger.info('开始处理浮动盈利保护（定时任务）');
+
+        // 检查全局配置是否开启了浮动盈利保护
+        const frontendSettings = await PageDataModel.findOne({ name: "frontendSettings" }).lean();
+        const enableFloatingProfitProtection = frontendSettings?.data?.enableFloatingProfitProtection !== false;
+        
+        if (!enableFloatingProfitProtection) {
+            logger.info('浮动盈利保护已全局关闭，跳过处理');
+            return { success: true, message: '浮动盈利保护已全局关闭' };
+        }
 
         // 查询所有活跃用户
         const allActiveUsers = await UserTradeOptionsModel.find({
