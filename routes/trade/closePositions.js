@@ -75,19 +75,46 @@ export const closePositions = async (req, res) => {
                 // 更新对应交易记录状态为closed
                 const symbolsToClose = tradeData.map(t => t.symbol);
                 for (const symbol of symbolsToClose) {
-                    await TradeRecordModel.updateMany(
-                        {
-                            userId: option.userId,
-                            symbol: symbol,
-                            status: { $ne: 'closed' }
-                        },
-                        {
-                            $set: {
-                                status: 'closed',
-                                closeTime: new Date()
+                    // 先查询需要平仓的交易记录
+                    const tradeRecords = await TradeRecordModel.find({
+                        userId: option.userId,
+                        symbol: symbol,
+                        status: { $ne: 'closed' }
+                    }).lean();
+                    
+                    // 为每个交易记录计算收益率并更新
+                    for (const record of tradeRecords) {
+                        // 找到对应的持仓信息以获取平仓价格
+                        const position = profitablePositions.find(pos => pos.symbol === symbol);
+                        if (position) {
+                            const entryPrice = parseFloat(record.price) || 0;
+                            const closePrice = parseFloat(position.currentPrice) || 0;
+                            let profitRate = 0;
+                            
+                            if (entryPrice > 0 && closePrice > 0) {
+                                if (record.direction === 'buy') {
+                                    // 多单：(平仓价格 - 入场价格) / 入场价格
+                                    profitRate = ((closePrice - entryPrice) / entryPrice) * 100;
+                                } else {
+                                    // 空单：(入场价格 - 平仓价格) / 入场价格
+                                    profitRate = ((entryPrice - closePrice) / entryPrice) * 100;
+                                }
                             }
+                            
+                            // 更新交易记录
+                            await TradeRecordModel.updateOne(
+                                { _id: record._id },
+                                {
+                                    $set: {
+                                        status: 'closed',
+                                        closeTime: new Date(),
+                                        closePrice: closePrice.toString(),
+                                        profitRate: profitRate.toFixed(2).toString()
+                                    }
+                                }
+                            );
                         }
-                    );
+                    }
                     console.log(`已更新用户 ${option.userId} 交易对 ${symbol} 的交易记录状态为closed`);
                 }
 

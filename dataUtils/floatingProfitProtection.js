@@ -253,7 +253,7 @@ async function executeFullClosePositions(userOption, reason) {
 
         // 获取交易所信息
         const exchange = userOption.belong || '';
-        
+
         // 重置监控状态
         await resetProfitProtectionStatus(userOption.userId, exchange);
 
@@ -367,6 +367,15 @@ async function handleUserFloatingProfitProtection(userOption) {
         // 获取当前监控状态
         const currentState = await getProfitProtectionStatus(userOption.userId, exchange);
         // 规则判断
+        logger.info(`用户 ${userOption.userId} 交易所: ${exchange} 当前总浮动收益率: ${totalFloatingProfitRate.toFixed(2)}%, 监控状态: ${currentState.state}`, {
+            totalFloatingProfitRate: totalFloatingProfitRate.toFixed(2),
+            totalFloatingProfit: totalFloatingProfit.toFixed(2),
+            totalBenchmark: totalBenchmark.toFixed(2),
+            total: total.toFixed(2),
+            availableBalance: availableBalance.toFixed(2),
+            currentState: currentState.state
+        });
+
         // 如果收益率超过止盈阈值，则全部平仓
         if (totalFloatingProfitRate >= CONFIG.TAKE_PROFIT_CLOSE_VALUE) {
             // 主动止盈
@@ -383,6 +392,27 @@ async function handleUserFloatingProfitProtection(userOption) {
                 availableBalance
             });
             return { success: true, message: '触发主动止盈', action: 'TAKE_PROFIT_CLOSE' };
+        } else if (currentState.state === 'MONITORING' && totalFloatingProfitRate <= CONFIG.PROTECTION_VALUE) {
+            // 在监控状态下，如果收益率下降到保护值以下，执行保护性平仓
+            logger.info(`用户 ${userOption.userId} 触发回撤保护，收益率: ${totalFloatingProfitRate.toFixed(2)}% ≤ ${CONFIG.PROTECTION_VALUE}%`, {
+                totalFloatingProfitRate: totalFloatingProfitRate.toFixed(2),
+                totalFloatingProfit: totalFloatingProfit.toFixed(2),
+                totalBenchmark: totalBenchmark.toFixed(2),
+                total: total.toFixed(2),
+                availableBalance: availableBalance.toFixed(2)
+            });
+            await executeFullClosePositions(userOption, '回撤保护');
+            await updateProfitProtectionStatus(userOption.userId, {
+                exchange,
+                state: 'TRIGGERED',
+                triggeredAt: new Date(),
+                totalFloatingProfitRate,
+                totalFloatingProfit,
+                totalBenchmark,
+                total,
+                availableBalance
+            });
+            return { success: true, message: '触发回撤保护', action: 'PROTECTION_CLOSE' };
         } else if (totalFloatingProfitRate > CONFIG.TRIGGER_PROTECTION_VALUE && totalFloatingProfitRate < CONFIG.TAKE_PROFIT_CLOSE_VALUE) {
             // 收益率在触发保护值和止盈值之间，进入监控状态
             const newHighestProfitRate = Math.max(currentState.highestProfitRate, totalFloatingProfitRate);
@@ -406,59 +436,9 @@ async function handleUserFloatingProfitProtection(userOption) {
                 availableBalance: availableBalance.toFixed(2)
             });
             return { success: true, message: '进入回撤保护监控', action: 'START_MONITORING' };
-        } else if (currentState.state === 'MONITORING' && totalFloatingProfitRate <= CONFIG.PROTECTION_VALUE) {
-            // 在监控状态下，如果收益率下降到保护值以下，执行保护性平仓
-            logger.info(`用户 ${userOption.userId} 触发回撤保护，收益率: ${totalFloatingProfitRate.toFixed(2)}% ≤ ${CONFIG.PROTECTION_VALUE}%`, {
-                totalFloatingProfitRate: totalFloatingProfitRate.toFixed(2),
-                totalFloatingProfit: totalFloatingProfit.toFixed(2),
-                totalBenchmark: totalBenchmark.toFixed(2),
-                total: total.toFixed(2),
-                availableBalance: availableBalance.toFixed(2)
-            });
-            await executeFullClosePositions(userOption, '回撤保护');
-            await updateProfitProtectionStatus(userOption.userId, {
-                exchange,
-                state: 'TRIGGERED',
-                triggeredAt: new Date(),
-                totalFloatingProfitRate,
-                totalFloatingProfit,
-                totalBenchmark,
-                total,
-                availableBalance
-            });
-            return { success: true, message: '触发回撤保护', action: 'PROTECTION_CLOSE' };
-        } else if (totalFloatingProfitRate <= CONFIG.TRIGGER_PROTECTION_VALUE) {
-            // 未达到触发条件，重置状态
-            if (currentState.state !== 'IDLE') {
-                await resetProfitProtectionStatus(userOption.userId, exchange);
-                logger.info(`用户 ${userOption.userId} 重置监控状态为IDLE`, {
-                    totalFloatingProfitRate: totalFloatingProfitRate.toFixed(2),
-                    totalFloatingProfit: totalFloatingProfit.toFixed(2),
-                    totalBenchmark: totalBenchmark.toFixed(2),
-                    total: total.toFixed(2),
-                    availableBalance: availableBalance.toFixed(2)
-                });
-            } else {
-                // 更新收益率但保持IDLE状态
-                await updateProfitProtectionStatus(userOption.userId, {
-                    exchange,
-                    totalFloatingProfitRate,
-                    totalFloatingProfit,
-                    totalBenchmark,
-                    total,
-                    availableBalance
-                });
+        }
+        return { success: true, message: '未达到触发条件', action: 'NO_ACTION' };
 
-                logger.info(`用户 ${userOption.userId} 保持IDLE状态`, {
-                    totalFloatingProfitRate: totalFloatingProfitRate.toFixed(2),
-                    totalFloatingProfit: totalFloatingProfit.toFixed(2),
-                    totalBenchmark: totalBenchmark.toFixed(2),
-                    total: total.toFixed(2),
-                    availableBalance: availableBalance.toFixed(2)
-                });
-            }
-            return { success: true, message: '未达到触发条件', action: 'NO_ACTION' };
-        } 
     } catch (error) {
         logger.error(`处理用户 ${userOption.userId} 的浮动盈利保护时出错:`, error);
         return { success: false, message: '处理浮动盈利保护时出错', error: error.message };
@@ -476,7 +456,7 @@ export const handleFloatingProfitProtection = async () => {
         // 检查全局配置是否开启了浮动盈利保护
         const frontendSettings = await PageDataModel.findOne({ name: "frontendSettings" }).lean();
         const enableFloatingProfitProtection = frontendSettings?.data?.enableFloatingProfitProtection !== false;
-        
+
         if (!enableFloatingProfitProtection) {
             logger.info('浮动盈利保护已全局关闭，跳过处理');
             return { success: true, message: '浮动盈利保护已全局关闭' };
