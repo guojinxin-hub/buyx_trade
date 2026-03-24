@@ -436,6 +436,16 @@ async function handleUserFloatingProfitProtection(userOption) {
                 availableBalance: availableBalance.toFixed(2)
             });
             return { success: true, message: '进入回撤保护监控', action: 'START_MONITORING' };
+        } else {
+            await updateProfitProtectionStatus(userOption.userId, {
+                exchange,
+                triggeredAt: new Date(),
+                totalFloatingProfitRate,
+                totalFloatingProfit,
+                totalBenchmark,
+                total,
+                availableBalance
+            });
         }
         return { success: true, message: '未达到触发条件', action: 'NO_ACTION' };
 
