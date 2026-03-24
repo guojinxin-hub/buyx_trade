@@ -338,16 +338,21 @@ async function handleUserFloatingProfitProtection(userOption) {
                     {
                         const OKXFuturesTrade = require('./OKXFutures/OKXFuturesTrade');
                         const { decrypt } = require('./utils');
-                        const trader = new OKXFuturesTrade(decrypt(apiKey), decrypt(apiSecret), decrypt(passphrase), isTestOption);
+                        const trader = new OKXFuturesTrade({
+                            apiKey: decrypt(apiKey),
+                            secretKey: decrypt(apiSecret),
+                            passphrase: passphrase,
+                            isSimulated: isTestOption
+                        });
 
                         // 获取账户信息
-                        const accountInfo = await retryAsync(() => trader.checkUserAccount(), 3, 3000);
+                        const accountInfo = await retryAsync(() => trader.getAccountInfo(), 3, 3000);
 
                         // 计算总浮动收益率
-                        total = parseFloat(accountInfo.total) || 0;
-                        totalFloatingProfit = parseFloat(accountInfo.unrealisedPnl) || 0;
+                        total = parseFloat(accountInfo.balance.total) || 0;
+                        totalFloatingProfit = parseFloat(accountInfo.balance.unrealisedPnl) || 0;
                         totalBenchmark = total - totalFloatingProfit;
-                        availableBalance = parseFloat(accountInfo.available) || 0;
+                        availableBalance = parseFloat(accountInfo.balance.available) || 0;
                         totalFloatingProfitRate = totalBenchmark > 0 ? (totalFloatingProfit / totalBenchmark) * 100 : 0;
                     }
                     break;
