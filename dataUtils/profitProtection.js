@@ -330,7 +330,7 @@ export const handleProfitProtection = async (req, res) => {
         const results = [];
         for (const userOption of usersWithProfitProtection) {
             // const userResult = await handleUserProfitProtection(userOption);
-            results.push({ userId: userOption.userId, ...userResult });
+           // results.push({ userId: userOption.userId, ...userResult });
         }
 
         // 返回处理结果
