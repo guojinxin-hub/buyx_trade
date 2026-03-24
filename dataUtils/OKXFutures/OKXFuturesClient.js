@@ -178,6 +178,7 @@ class OKXClient {
                 params.px = parseFloat(params.px.toFixed(decimals));
             }
 
+            console.log("params.attachAlgoOrds1",params.attachAlgoOrds)
             // 处理止盈止损价格精度
             if (params.attachAlgoOrds) {
                 const instrument = await this.getInstrumentInfo(params.instId);
@@ -195,7 +196,7 @@ class OKXClient {
                     );
                 }
             }
-
+console.log("params.attachAlgoOrds2",params.attachAlgoOrds)
             const orderData = {
                 isTradeBorrowMode: false,
                 instId: params.instId,

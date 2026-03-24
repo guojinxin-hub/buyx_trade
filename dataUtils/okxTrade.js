@@ -5,7 +5,7 @@ import {saveUserBalance} from "./saveUserBalance";
 import {decrypt} from "./utils";
 
 export const okxTrade = async ({tradeData, userOptions}) => {
-
+    console.log("OKX交易启动")
     try {
         const {apiKey, apiSecret, passphrase, isTestOption = true, currency, isActive} = userOptions
         const trader = new OKXFuturesTrader({
@@ -62,7 +62,7 @@ export const okxTrade = async ({tradeData, userOptions}) => {
             }
         }
     } catch (error) {
-        console.error('交易失败:', error);
+        console.error('OKX交易失败:', error);
     }
 }
 
