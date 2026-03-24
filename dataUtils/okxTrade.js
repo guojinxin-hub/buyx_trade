@@ -45,20 +45,19 @@ export const okxTrade = async ({tradeData, userOptions}) => {
                 await trader.setPositionMode()
             }
             for (const item of futureContractData) {
-                if (direction === 'all' || direction === item.direction) {
-                    // 执行交易
-                    const result = await trader.executeTrade({
-                        instId: `${item.symbol}-USDT-SWAP`, // 交易对
-                        usdtAmount: Number(maxVolume), // 交易金额
-                        direction: item.direction, // 方向: buy/sell
-                        leverage: Number(leverage), // 杠杆倍数
-                        minMargin: Number(insurance), // 最小保证金要求
-                        takeProfitPercent: Number(takeProfit), // 止盈百分比
-                        stopLossPercent: Number(stopLoss), // 止损百分比
-                        symbolInfo: item.symbolInfo,
-                    });
-                    console.log('交易结果:', result);
-                }
+                // 执行交易
+                const result = await trader.executeTrade({
+                    instId: `${item.symbol}-USDT-SWAP`, // 交易对
+                    usdtAmount: Number(maxVolume), // 交易金额
+                    direction: item.direction, // 方向: buy/sell
+                    leverage: Number(leverage), // 杠杆倍数
+                    minMargin: Number(insurance), // 最小保证金要求
+                    takeProfitPercent: Number(takeProfit), // 止盈百分比
+                    stopLossPercent: Number(stopLoss), // 止损百分比
+                    symbolInfo: item.symbolInfo,
+                    settingDirection: direction,
+                });
+                console.log('交易结果:', result);
             }
         }
     } catch (error) {
