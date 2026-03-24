@@ -136,31 +136,9 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
                         price: 0,
                         tif: "ioc",
                     }, {}));
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    
+                    await new Promise(resolve => setTimeout(resolve, 300));
                     console.log(`平仓操作完成: ${symbol}`, closeOrder.body);
-                    
-                    // 更新交易记录状态为已平仓
-                    try {
-                        await TradeRecordModel.updateMany(
-                            {
-                                userId: userOptions.userId,
-                                symbol: symbol,
-                                status: { $ne: 'closed' }
-                            },
-                            {
-                                $set: {
-                                    status: 'closed',
-                                    closeTime: new Date(),
-                                    closePrice: closeOrder.body.fillPrice || null
-                                }
-                            }
-                        );
-                        console.log(`已更新 ${symbol} 的交易记录状态为已平仓`);
-                    } catch (e) {
-                        console.error(`更新交易记录状态失败:`, e.message);
-                        // 继续执行，不因记录更新失败而中断流程
-                    }
+                
                 }
             } catch (e) {
                 console.error(`执行 ${symbol} 平仓操作失败:`, e.message);
@@ -229,27 +207,7 @@ export const executeBinanceClosePositions = async ({tradeData, userOptions}) => 
                 const result = await retryRequest(() => trader.closePosition(`${symbol}USDT`));
                 console.log(`平仓结果: ${symbol}`, result);
                 
-                // 更新交易记录状态为已平仓
-                try {
-                    await TradeRecordModel.updateMany(
-                        {
-                            userId: userOptions.userId,
-                            symbol: symbol,
-                            status: { $ne: 'closed' }
-                        },
-                        {
-                            $set: {
-                                status: 'closed',
-                                closeTime: new Date(),
-                                closePrice: result.filledPrice || null
-                            }
-                        }
-                    );
-                    console.log(`已更新 ${symbol} 的交易记录状态为已平仓`);
-                } catch (e) {
-                    console.error(`更新交易记录状态失败:`, e.message);
-                    // 继续执行，不因记录更新失败而中断流程
-                }
+             
             } catch (e) {
                 console.error(`执行 ${symbol} 平仓操作失败:`, e.message);
                 // 继续处理下一个交易对
@@ -322,27 +280,7 @@ export const executeOKXClosePositions = async ({tradeData, userOptions}) => {
                 const result = await retryRequest(() => trader.closePosition(`${symbol}-USDT-SWAP`));
                 console.log(`平仓结果: ${symbol}`, result);
                 
-                // 更新交易记录状态为已平仓
-                try {
-                    await TradeRecordModel.updateMany(
-                        {
-                            userId: userOptions.userId,
-                            symbol: symbol,
-                            status: { $ne: 'closed' }
-                        },
-                        {
-                            $set: {
-                                status: 'closed',
-                                closeTime: new Date(),
-                                closePrice: result.filledPrice || null
-                            }
-                        }
-                    );
-                    console.log(`已更新 ${symbol} 的交易记录状态为已平仓`);
-                } catch (e) {
-                    console.error(`更新交易记录状态失败:`, e.message);
-                    // 继续执行，不因记录更新失败而中断流程
-                }
+             
             } catch (e) {
                 console.error(`执行 ${symbol} 平仓操作失败:`, e.message);
                 // 继续处理下一个交易对

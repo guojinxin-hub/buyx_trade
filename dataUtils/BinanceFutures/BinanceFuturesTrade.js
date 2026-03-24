@@ -108,6 +108,19 @@ class BinanceFuturesTrader {
     }
 
     /**
+     * 获取所有持仓
+     */
+    async getPositions() {
+        try {
+            const accountInfo = await retryRequest(() => this.client.getAccountInfo());
+            return accountInfo.positions || [];
+        } catch (error) {
+            console.error('获取所有持仓失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
      * 平仓
      */
     async closePosition(symbol) {
