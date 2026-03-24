@@ -383,7 +383,7 @@ async function handleUserFloatingProfitProtection(userOption) {
             await executeFullClosePositions(userOption, '主动止盈');
             await updateProfitProtectionStatus(userOption.userId, {
                 exchange,
-                state: 'TRIGGERED',
+                state: 'IDLE',
                 triggeredAt: new Date(),
                 totalFloatingProfitRate,
                 totalFloatingProfit,
@@ -404,7 +404,7 @@ async function handleUserFloatingProfitProtection(userOption) {
             await executeFullClosePositions(userOption, '回撤保护');
             await updateProfitProtectionStatus(userOption.userId, {
                 exchange,
-                state: 'TRIGGERED',
+                state: 'IDLE',
                 triggeredAt: new Date(),
                 totalFloatingProfitRate,
                 totalFloatingProfit,

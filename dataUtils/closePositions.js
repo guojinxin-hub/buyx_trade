@@ -2,6 +2,7 @@ import {decrypt} from "./utils";
 import {saveUserBalance} from "./saveUserBalance";
 import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
 import {isEmpty} from "lodash";
+import {getUserPositions} from "./apiTrade";
 
 // Gate API
 const GateApi = require('gate-api');
@@ -93,16 +94,11 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
             // 使用提供的交易数据
             symbolsToClose = tradeData.map(item => item.symbol);
         } else {
-            // 自动获取所有持仓
+            // 使用 getUserPositions 获取所有持仓
             console.log(`自动获取Gate交易所的所有持仓`);
-            const positions = await retryRequest(() => futuresApi.listFuturesPositions(settle));
-            if (positions && positions.body) {
-                symbolsToClose = positions.body
-                    .filter(position => position.size !== 0)
-                    .map(position => {
-                        // 从合约名称中提取交易对符号，如 "BTC_USDT" -> "BTC"
-                        return position.contract.replace('_USDT', '');
-                    });
+            const userPositions = await getUserPositions(userOptions);
+            if (userPositions && userPositions.length > 0) {
+                symbolsToClose = userPositions.map(position => position.symbol);
             }
             console.log(`找到 ${symbolsToClose.length} 个持仓`);
         }
@@ -184,16 +180,11 @@ export const executeBinanceClosePositions = async ({tradeData, userOptions}) => 
             // 使用提供的交易数据
             symbolsToClose = tradeData.map(item => item.symbol);
         } else {
-            // 自动获取所有持仓
+            // 使用 getUserPositions 获取所有持仓
             console.log(`自动获取Binance交易所的所有持仓`);
-            const positions = await retryRequest(() => trader.getPositions());
-            if (positions && positions.length > 0) {
-                symbolsToClose = positions
-                    .filter(position => parseFloat(position.positionAmt) !== 0)
-                    .map(position => {
-                        // 从交易对中提取基础货币，如 "BTCUSDT" -> "BTC"
-                        return position.symbol.replace('USDT', '');
-                    });
+            const userPositions = await getUserPositions(userOptions);
+            if (userPositions && userPositions.length > 0) {
+                symbolsToClose = userPositions.map(position => position.symbol);
             }
             console.log(`找到 ${symbolsToClose.length} 个持仓`);
         }
@@ -257,16 +248,11 @@ export const executeOKXClosePositions = async ({tradeData, userOptions}) => {
             // 使用提供的交易数据
             symbolsToClose = tradeData.map(item => item.symbol);
         } else {
-            // 自动获取所有持仓
+            // 使用 getUserPositions 获取所有持仓
             console.log(`自动获取OKX交易所的所有持仓`);
-            const positions = await retryRequest(() => trader.getPositions());
-            if (positions && positions.length > 0) {
-                symbolsToClose = positions
-                    .filter(position => parseFloat(position.position) !== 0)
-                    .map(position => {
-                        // 从交易对中提取基础货币，如 "BTC-USDT-SWAP" -> "BTC"
-                        return position.instrumentId.replace('-USDT-SWAP', '');
-                    });
+            const userPositions = await getUserPositions(userOptions);
+            if (userPositions && userPositions.length > 0) {
+                symbolsToClose = userPositions.map(position => position.symbol);
             }
             console.log(`找到 ${symbolsToClose.length} 个持仓`);
         }

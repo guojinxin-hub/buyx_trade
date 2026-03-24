@@ -6,6 +6,7 @@ import { isEmpty } from "lodash";
 import { apiTrade } from "../dataUtils/apiTrade";
 import { saveUserBalance } from "../dataUtils/saveUserBalance";
 import { formatResponse } from "../dataUtils/formatResponse";
+import { executeGateClosePositions } from '../dataUtils/closePositions'
 const BinanceFuturesClient = require('../dataUtils/BinanceFutures/BinanceFuturesClient');
 const GateApi = require('gate-api');
 const TRADE_API_URL = process.env.TRADE_API_URL
@@ -14,21 +15,7 @@ let client = new GateApi.ApiClient();
 
 export const testAPI = async (req, res) => {
     try {
-        // 创建BinanceFuturesClient实例
-        // 注意: 你需要替换下面的API_KEY和API_SECRET为你自己的币安API密钥
-        // 如果是测试网络，第三个参数设置为true
-        const client = new BinanceFuturesClient(
-            '8MpbjHooSkKxpt1BFHdFOlsHFTXzmGlLhcqiSuSlee2EkkBPS7kZeYySQNghezGU',    // 替换为你的API Key
-            '6xYKIYOVVwPkH6nip6qJRawGKenxAzdq30rBZoGJIrYGFQLfsj238uvznVdIRXJs', // 替换为你的API Secret
-            false              // 是否使用测试网络
-        );
-
-        // 测试获取BTCUSDT的挂单
-        const symbol = 'ONDOUSDT';
-        console.log(`正在获取 ${symbol} 的挂单...`);
-
-        const openOrders = await client.getOpenOrders(symbol);
-        console.log('挂单信息:', JSON.stringify(openOrders, null, 2));
+        executeGateClosePositions({ userOptions: { apiKey:"U2FsdGVkX18a3sPkI5N4lGJlC6vgNe2O6JrQDGVh3XYz/cFQT8TioiGHmIXjwW6J1afp/kxtRURO1O5opSpRXA==", apiSecret:"U2FsdGVkX1//QntCloQ2MyLF3lLKxg7/WozpFesprbzZQsIBPpv0Eg+xpYn3hA6/cV4X6FiLhm1+sgpvkztlNwxVhTKdkVHLxeFE1RImavj5tlrFrH2A6lHDS5AhJ6BP", isTestOption:true } })
 
         return formatResponse(res, 200, 0, openOrders, 'success');
         // testCode()
