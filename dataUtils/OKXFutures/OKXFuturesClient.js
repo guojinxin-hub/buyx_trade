@@ -302,7 +302,7 @@ console.log("params.attachAlgoOrds2",params.attachAlgoOrds)
             const usdtAvailBal = details.find((o) => o.ccy === "USDT")
             // 格式化返回数据
             const balance = {
-                total: usdtAvailBal.cashBal,
+                total: usdtAvailBal.eq,
                 unrealisedPnl: usdtAvailBal.upl,
                 available: usdtAvailBal.availBal
             };
