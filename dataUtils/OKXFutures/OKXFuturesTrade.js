@@ -284,7 +284,8 @@ class OKXFuturesTrader {
             minMargin = 0,
             takeProfitPercent = 0,
             stopLossPercent = 0,
-            symbolInfo
+            symbolInfo,
+            settingDirection
         } = params;
 
         try {
@@ -361,20 +362,22 @@ class OKXFuturesTrader {
                     }
                 }
             } else {
-                const order = await this.client.placeOrderWithUsdt({
-                    instId,
-                    side: direction,
-                    size: size, // 100 USDT
-                    attachAlgoOrds: {
-                        slTriggerPx: stopLossPrice, // 止损触发价
-                        slOrdPx: -1, // -1表示市价止损
-                        slTriggerPxType: 'last', // 最新价触发
-                        tpOrdKind: "condition",
-                        tpOrdPx: -1, // 止盈价
-                        tpTriggerPx: takeProfitPrice, // 止盈价
-                        tpTriggerPxType: 'last',
-                    }
-                });
+                if (settingDirection === "all" || direction === settingDirection) {
+                    const order = await this.client.placeOrderWithUsdt({
+                        instId,
+                        side: direction,
+                        size: size, // 100 USDT
+                        attachAlgoOrds: {
+                            slTriggerPx: stopLossPrice, // 止损触发价
+                            slOrdPx: -1, // -1表示市价止损
+                            slTriggerPxType: 'last', // 最新价触发
+                            tpOrdKind: "condition",
+                            tpOrdPx: -1, // 止盈价
+                            tpTriggerPx: takeProfitPrice, // 止盈价
+                            tpTriggerPxType: 'last',
+                        }
+                    });
+                }
             }
             return {
                 success: true,
