@@ -1,4 +1,3 @@
-const Decimal = require('decimal.js')
 
 export const formatPrice = (price, step) => {
     if (!price || !step || Number(step) <= 0) {
