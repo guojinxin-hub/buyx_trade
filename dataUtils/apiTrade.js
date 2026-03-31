@@ -1,6 +1,7 @@
 import {gateTrade, updateProtectionStopLoss as updateGateProtectionStopLoss} from "./gateTrade.js";
 import {binanceTrade, updateProtectionStopLoss as updateBinanceProtectionStopLoss} from "./binanceTrade.js";
 import {okxTrade} from "./okxTrade.js";
+import {bitgetTrade} from "./bitgetTrade.js";
 
 export const apiTrade = async ({tradeData, userOptions}) => {
     const {belong} = userOptions
@@ -13,6 +14,9 @@ export const apiTrade = async ({tradeData, userOptions}) => {
             break;
         case 'OKX':
             await okxTrade({tradeData, userOptions})
+            break;
+        case 'Bitget':
+            await bitgetTrade({tradeData, userOptions})
             break;
         default:
             break;
@@ -91,6 +95,10 @@ export const getUserPositions = async (userOption) => {
                 // 导入 OKX 交易所的获取持仓函数
                 const {getOKXPositions} = await import('./okxTrade');
                 return await getOKXPositions(userOption);
+            case 'Bitget':
+                console.log('调用 Bitget 交易所的持仓信息获取');
+                const {getBitgetPositions} = await import('./bitgetTrade');
+                return await getBitgetPositions(userOption);
             default:
                 console.error('不支持的交易所:', belong);
                 return [];
