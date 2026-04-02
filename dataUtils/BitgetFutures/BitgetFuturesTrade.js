@@ -25,14 +25,23 @@ class BitgetFuturesTrade {
 
     async getAccountInfo() {
         console.log("获取账户")
-        const account = await this._retry(() => this.client.getAccount(), 3, 1000);
-        return {
-            balance: {
+        try {
+            const account = await this._retry(() => this.client.getAccount(), 3, 1000);
+            if (!account) {
+                throw new Error('未获取到账户信息');
+            }
+            const balance = {
                 total: account?.equity ?? account?.accountEquity ?? account?.totalEquity ?? account?.available ?? '0',
                 unrealisedPnl: account?.unrealizedPL ?? account?.unrealisedPnl ?? account?.upl ?? '0',
                 available: account?.available ?? account?.availableBalance ?? account?.availBal ?? '0'
-            }
-        };
+            };
+            console.log("获取账户信息成功:", balance);
+            return { balance };
+        } catch (error) {
+            console.error('获取账户信息失败:', error.message);
+            // 抛出错误，让调用方知道发生了问题
+            throw error;
+        }
     }
 
     async checkMargin(usdtAmount, minMargin = 0) {

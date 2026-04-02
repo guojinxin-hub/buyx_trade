@@ -9,7 +9,7 @@ class BitgetFuturesClient {
         this.passphrase = passphrase;
         // Bitget 官方也提供 api.bitget.fit 作为镜像域名
         // 你当前环境对部分域名可能会出现连接重置（ECONNRESET）
-        this.baseURLCandidates = ['https://api.bitget.com'];
+        this.baseURLCandidates = ['https://api.bitget.com', 'https://api.bitget.fit'];
         this.baseURL = this.baseURLCandidates[0];
         this.isSimulated = isSimulated;
 
@@ -196,11 +196,88 @@ class BitgetFuturesClient {
     }
 
     async getAccount() {
-        const resp = await this.client.get('/api/v2/mix/account/accounts', {
-            params: {productType: this.tradeProductType}
-        });
-        const list = resp.data?.data || resp.data || [];
-        return list.find((item) => (item.marginCoin || '').toUpperCase() === this.marginCoin) || list[0];
+        let lastError;
+        for (const baseURL of this.baseURLCandidates) {
+            try {
+                console.log(`尝试使用域名 ${baseURL} 获取账户信息`);
+                
+                // 创建临时客户端
+                const tempClient = axios.create({
+                    baseURL: baseURL,
+                    timeout: 30000,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        locale: 'en-US'
+                    }
+                });
+                
+                // 复制请求拦截器
+                tempClient.interceptors.request.use((config) => {
+                    const method = (config.method || 'GET').toUpperCase();
+                    const timestamp = Date.now().toString();
+                    const path = config.url;
+                    
+                    // 构建查询字符串
+                    const queryString = this._buildQueryString(config.params || {});
+                    
+                    // 构建请求体（对于POST请求）
+                    const body = config.data ? JSON.stringify(config.data) : '';
+                    
+                    // 生成签名
+                    const sign = this._generateSign(timestamp, method, path, queryString, body);
+                    
+                    config.headers = {
+                        ...config.headers,
+                        'ACCESS-KEY': this.apiKey,
+                        'ACCESS-SIGN': sign,
+                        'ACCESS-TIMESTAMP': timestamp,
+                        'ACCESS-PASSPHRASE': this.passphrase,
+                        locale: 'en-US'
+                    };
+                    
+                    if (this.isSimulated) {
+                        config.headers['paptrading'] = '1';
+                    }
+                    
+                    return config;
+                });
+                
+                // 复制响应拦截器
+                tempClient.interceptors.response.use(
+                    (response) => {
+                        const {data} = response;
+                        if (!data) {
+                            throw new Error('Bitget 返回空响应');
+                        }
+                        if (data.code !== '00000') {
+                            throw new Error(`Bitget API Error: ${data.msg} (${data.code})`);
+                        }
+                        return data;
+                    },
+                    (error) => {
+                        if (error.response) {
+                            throw new Error(`HTTP Error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+                        }
+                        throw error;
+                    }
+                );
+                
+                const resp = await tempClient.get('/api/v2/mix/account/accounts', {
+                    params: {productType: this.tradeProductType}
+                });
+                const list = resp.data?.data || resp.data || [];
+                const account = list.find((item) => (item.marginCoin || '').toUpperCase() === this.marginCoin) || list[0];
+                
+                if (account) {
+                    console.log(`成功使用域名 ${baseURL} 获取账户信息`);
+                    return account;
+                }
+            } catch (error) {
+                lastError = error;
+                console.warn(`使用域名 ${baseURL} 获取账户信息失败:`, error.message);
+            }
+        }
+        throw lastError || new Error('所有 API 域名都无法获取账户信息');
     }
 
     async getPositions(symbol) {
