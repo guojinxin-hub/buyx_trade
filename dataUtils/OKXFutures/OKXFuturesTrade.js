@@ -243,7 +243,7 @@ class OKXFuturesTrader {
             // 获取持仓信息
             const positions = await this.client.getPositions(instId);
             const position = positions.find((p) => p.instId === instId && parseFloat(p.pos) !== 0);
-            
+
             if (!position) {
                 console.log('没有持仓需要平仓');
                 return null;
@@ -314,7 +314,12 @@ class OKXFuturesTrader {
                 takeProfitPrice = currentPrice * (1 - takeProfitPercent / 100);
                 stopLossPrice = currentPrice * (1 + stopLossPercent / 100);
             }
-
+            if (takeProfitPrice < 0) {
+                takeProfitPrice = 0
+            }
+            if (stopLossPrice < 0) {
+                stopLossPrice = 0
+            }
             // 格式化价格到正确精度
             console.log(`当前价格 ${currentPrice} 止盈价格: ${takeProfitPrice}, 止损价格: ${stopLossPrice} 方向：${direction} ,USDT: ${usdtAmount}`);
             const size = this.calculateQuantity({symbolInfo, lastPrice: currentPrice, usdtAmount, leverage})
