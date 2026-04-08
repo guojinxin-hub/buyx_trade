@@ -19,12 +19,13 @@ export const testAPI = async (req, res) => {
         const options = await UserTradeOptionsModel.find({
             isActive: true,
             isDelete: false,
-            belong: "Bitget",
+            belong: "OKX",
+            userId: new ObjectId("65eec13ab13f816e4145ad8a")
         }).lean()
         console.log("options", options)
         for (const option of options) {
             if (!isEmpty(option)) {
-                await apiTrade({userOptions: option, tradeData: [{symbol: 'BTC', direction: 'buy'}]})
+                await apiTrade({userOptions: option, tradeData: [{symbol: 'ICP', direction: 'sell'}]})
             }
         }
         res.status(200).json({message: "success"})
