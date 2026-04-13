@@ -25,7 +25,7 @@ export const testAPI = async (req, res) => {
         console.log("options", options)
         for (const option of options) {
             if (!isEmpty(option)) {
-                await apiTrade({userOptions: option, tradeData: [{symbol: 'ETH', direction: 'buy'}]})
+                await apiTrade({userOptions: option, tradeData: [{symbol: 'ETH', direction: 'sell'}]})
             }
         }
         res.status(200).json({message: "success"})
