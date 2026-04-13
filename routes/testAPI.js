@@ -20,7 +20,7 @@ export const testAPI = async (req, res) => {
             isActive: true,
             isDelete: false,
             belong: "Bybit",
-            userId: new ObjectId("66042c8dda590dfa1b3a8166")
+            userId: new ObjectId("65eec13ab13f816e4145ad8a")
         }).lean()
         console.log("options", options)
         for (const option of options) {
