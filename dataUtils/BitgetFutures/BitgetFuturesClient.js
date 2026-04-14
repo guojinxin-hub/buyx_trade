@@ -357,6 +357,27 @@ class BitgetFuturesClient {
     async placeTPSLPlan(params) {
         return this.client.post('/api/mix/v1/plan/placeTPSL', params);
     }
+
+    // 带单专用 API 方法
+    async getTraderOrdersTrack(traderId, pageNo = 1, pageSize = 20, symbol = '') {
+        const params = {
+            traderId,
+            pageNo,
+            pageSize
+        };
+        if (symbol) {
+            params.symbol = symbol;
+        }
+        return this.client.get('/api/copy/v1/trader/orders-track', {params});
+    }
+
+    async getTraderInfo(traderId) {
+        return this.client.get('/api/copy/v1/trader/info', {params: {traderId}});
+    }
+
+    async getTraderPerformance(traderId, period = '7d') {
+        return this.client.get('/api/copy/v1/trader/performance', {params: {traderId, period}});
+    }
 }
 
 module.exports = BitgetFuturesClient;

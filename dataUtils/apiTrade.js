@@ -1,22 +1,25 @@
-import {gateTrade, updateProtectionStopLoss as updateGateProtectionStopLoss} from "./gateTrade.js";
-import {binanceTrade, updateProtectionStopLoss as updateBinanceProtectionStopLoss} from "./binanceTrade.js";
-import {okxTrade} from "./okxTrade.js";
-import {bitgetTrade} from "./bitgetTrade.js";
+import { gateTrade, updateProtectionStopLoss as updateGateProtectionStopLoss } from "./gateTrade.js";
+import { binanceTrade, updateProtectionStopLoss as updateBinanceProtectionStopLoss } from "./binanceTrade.js";
+import { okxTrade } from "./okxTrade.js";
+import { bitgetTrade, bitgetLeaderTrade } from "./bitgetTrade.js";
 
-export const apiTrade = async ({tradeData, userOptions}) => {
-    const {belong} = userOptions
+export const apiTrade = async ({ tradeData, userOptions }) => {
+    const { belong } = userOptions
     switch (belong) {
         case 'Gate':
-            await gateTrade({tradeData, userOptions})
+            await gateTrade({ tradeData, userOptions })
             break;
         case 'Binance':
-            await binanceTrade({tradeData, userOptions})
+            await binanceTrade({ tradeData, userOptions })
             break;
         case 'OKX':
-            await okxTrade({tradeData, userOptions})
+            await okxTrade({ tradeData, userOptions })
             break;
         case 'Bitget':
-            await bitgetTrade({tradeData, userOptions})
+            await bitgetTrade({ tradeData, userOptions })
+            break;
+        case 'Bitget_Leader':
+            await bitgetLeaderTrade({ tradeData, userOptions })
             break;
         default:
             break;
@@ -60,11 +63,11 @@ export const updateProtectionStopLoss = async (userOption, symbol, direction, pr
                 console.log('调用 Binance 交易所的保护止损更新');
                 return await updateBinanceProtectionStopLoss(req, res);
             default:
-                return {success: false, message: '不支持的交易所'};
+                return { success: false, message: '不支持的交易所' };
         }
     } catch (error) {
         console.error('更新保护止损单出错:', error);
-        return {success: false, message: '更新保护止损单出错', error: error.message};
+        return { success: false, message: '更新保护止损单出错', error: error.message };
     }
 }
 
@@ -77,28 +80,32 @@ export const getUserPositions = async (userOption) => {
     try {
         console.log(`获取用户 ${userOption.userId} 的持仓信息`);
 
-        const {belong} = userOption;
+        const { belong } = userOption;
 
         switch (belong) {
             case 'Gate':
                 console.log('调用 Gate 交易所的持仓信息获取');
                 // 导入 Gate 交易所的获取持仓函数
-                const {getGatePositions} = await import('./gateTrade');
+                const { getGatePositions } = await import('./gateTrade');
                 return await getGatePositions(userOption);
             case 'Binance':
                 console.log('调用 Binance 交易所的持仓信息获取');
                 // 导入 Binance 交易所的获取持仓函数
-                const {getBinancePositions} = await import('./binanceTrade');
+                const { getBinancePositions } = await import('./binanceTrade');
                 return await getBinancePositions(userOption);
             case 'OKX':
                 console.log('调用 OKX 交易所的持仓信息获取');
                 // 导入 OKX 交易所的获取持仓函数
-                const {getOKXPositions} = await import('./okxTrade');
+                const { getOKXPositions } = await import('./okxTrade');
                 return await getOKXPositions(userOption);
             case 'Bitget':
                 console.log('调用 Bitget 交易所的持仓信息获取');
-                const {getBitgetPositions} = await import('./bitgetTrade');
+                const { getBitgetPositions } = await import('./bitgetTrade');
                 return await getBitgetPositions(userOption);
+            case 'Bitget_Leader':
+                console.log('调用 Bitget 带单的持仓信息获取');
+                const { getBitgetLeaderPositions } = await import('./bitgetTrade');
+                return await getBitgetLeaderPositions(userOption);
             default:
                 console.error('不支持的交易所:', belong);
                 return [];
