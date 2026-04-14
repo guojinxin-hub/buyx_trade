@@ -2,6 +2,7 @@ import { gateTrade, updateProtectionStopLoss as updateGateProtectionStopLoss } f
 import { binanceTrade, updateProtectionStopLoss as updateBinanceProtectionStopLoss } from "./binanceTrade.js";
 import { okxTrade } from "./okxTrade.js";
 import { bitgetTrade, bitgetLeaderTrade } from "./bitgetTrade.js";
+import { bybitTrade } from "./bybitTrade";
 
 export const apiTrade = async ({ tradeData, userOptions }) => {
     const { belong } = userOptions
@@ -20,6 +21,9 @@ export const apiTrade = async ({ tradeData, userOptions }) => {
             break;
         case 'Bitget_Leader':
             await bitgetLeaderTrade({ tradeData, userOptions })
+            break;
+        case 'Bybit':
+            await bybitTrade({ tradeData, userOptions })
             break;
         default:
             break;
