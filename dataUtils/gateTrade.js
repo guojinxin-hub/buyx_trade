@@ -2,8 +2,8 @@ import {intersectionWith, isEmpty} from "lodash";
 import {formatPrice} from "./formatPrice.js";
 import {decrypt} from "./utils/index.js";
 import {saveTradeRecord} from "./saveTradeRecord.js";
-import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
 import {saveUserBalance} from "./saveUserBalance.js";
+import moment from "moment";
 
 const GateApi = require('gate-api');
 const TRADE_API_URL = process.env.TRADE_API_URL
@@ -96,6 +96,7 @@ export const updateProtectionStopLoss = async (req, res) => {
 
 export const gateTrade = async ({ tradeData, userOptions }) => {
     try {
+        console.log(moment().format("YYYY-MM-DD HH:mm:ss"),userOptions.userId,"Gate 交易开始");
         // 1. 初始化 API 客户端
         const {apiKey, apiSecret, isTestOption, currency} = userOptions
         client.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
@@ -126,7 +127,8 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                 //  console.log("获取合约币种出错", e)
             }
         }
-        
+        console.log(moment().format("YYYY-MM-DD HH:mm:ss"),userOptions.userId,"币种",futureContractData);
+
         // 5. 检查用户是否激活交易
         if (userOptions.isActive) {
             // 5.1 获取并保存账户余额
@@ -154,12 +156,12 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
             
             // 5.3 匹配交易数据与合约数据
             const intersectionData = intersectionWith(filterTradeDate, futureContractData, (a, b) => `${a.symbol}_USDT` === b.name)
-            
+
             // 5.4 遍历处理每个交易信号
             for (const item of intersectionData) {
                 try {
                     const {symbol, direction} = item
-                    console.log("symbol: ", symbol, "direction: ", direction)
+                    console.log("Gate symbol: ", symbol, "direction: ", direction)
                     
                     // 获取当前持仓
                     let position = null
@@ -199,19 +201,19 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                     }
                     await new Promise(resolve => setTimeout(resolve, 200));
                 } catch (e) {
-                    console.log("e", e)
+                    console.log("Gate", e)
                 }
             }
         }
     } catch (e) {
-        console.log("e", e)
+        console.log("Gate", e)
     }
 }
 
 // 下单
 const createOrder = async (futuresApi, futureContractData, settle, symbol, direction, userOptions) => {
     try {
-        console.log("下单", userOptions.userId)
+        console.log("Gate下单", userOptions.userId)
         
         // 1. 检查用户是否允许该方向的交易 (userOptions.direction 为 "all", "buy" 或 "sell")
         if ((userOptions.direction === "all") || userOptions.direction === direction) {
@@ -346,7 +348,7 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
             }
         }
     } catch (e) {
-        console.log("下单出错", e)
+        console.log("Gate 下单出错", e)
     }
 }
 
