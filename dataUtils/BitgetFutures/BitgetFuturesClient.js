@@ -400,7 +400,40 @@ class BitgetFuturesClient {
             slOrderPrice
         } = params;
 
-        // 先设置杠杆
+        // 先平仓当前币种的仓位
+        try {
+            // 获取当前仓位信息
+            const positions = await this.client.get('/api/v3/position/current-position', {
+                params: {
+                    category: 'USDT-FUTURES',
+                    symbol: this._toV2Symbol(symbol)
+                }
+            });
+            console.log(34,positions)
+            // 如果有仓位，使用市价单平仓
+            if (positions && positions.data && positions.data.length > 0) {
+                for (const pos of positions.data) {
+                    if (parseFloat(pos.hold) > 0) {
+                        const closeSide = pos.posSide === 'long' ? 'sell' : 'buy';
+                        await this.client.post('/api/v3/trade/place-order', {
+                            category: 'USDT-FUTURES',
+                            symbol: this._toV2Symbol(symbol),
+                            marginCoin: 'USDT',
+                            qty: pos.hold,
+                            side: closeSide,
+                            orderType: 'market',
+                            posSide: pos.posSide,
+                            reduceOnly: 'yes'
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            // 平仓失败不影响继续下单
+            console.log('平仓失败或无仓位:', error.message);
+        }
+
+        // 设置杠杆
         await this.client.post('/api/v3/account/set-leverage', {
             category: 'USDT-FUTURES',
             symbol: this._toV2Symbol(symbol),
