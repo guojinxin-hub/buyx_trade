@@ -404,7 +404,6 @@ class BitgetFuturesClient {
         await this.client.post('/api/v3/account/set-leverage', {
             category: 'USDT-FUTURES',
             symbol: this._toV2Symbol(symbol),
-            marginCoin,
             leverage: `${leverage}`
         });
 
