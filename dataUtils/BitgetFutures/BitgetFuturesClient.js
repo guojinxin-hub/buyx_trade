@@ -1,9 +1,9 @@
 const axios = require('axios');
 const crypto = require('crypto');
-const {isEmpty} = require("lodash");
+const { isEmpty } = require("lodash");
 
 class BitgetFuturesClient {
-    constructor({apiKey, secretKey, passphrase, isSimulated = false}) {
+    constructor({ apiKey, secretKey, passphrase, isSimulated = false }) {
         this.apiKey = apiKey;
         this.secretKey = secretKey;
         this.passphrase = passphrase;
@@ -88,7 +88,7 @@ class BitgetFuturesClient {
 
         this.client.interceptors.response.use(
             (response) => {
-                const {data} = response;
+                const { data } = response;
                 if (!data) {
                     throw new Error('Bitget 返回空响应');
                 }
@@ -202,22 +202,22 @@ class BitgetFuturesClient {
                         locale: 'en-US'
                     }
                 });
-                
+
                 // 复制请求拦截器
                 tempClient.interceptors.request.use((config) => {
                     const method = (config.method || 'GET').toUpperCase();
                     const timestamp = Date.now().toString();
                     const path = config.url;
-                    
+
                     // 构建查询字符串
                     const queryString = this._buildQueryString(config.params || {});
-                    
+
                     // 构建请求体（对于POST请求）
                     const body = config.data ? JSON.stringify(config.data) : '';
-                    
+
                     // 生成签名
                     const sign = this._generateSign(timestamp, method, path, queryString, body);
-                    
+
                     config.headers = {
                         ...config.headers,
                         'ACCESS-KEY': this.apiKey,
@@ -226,18 +226,18 @@ class BitgetFuturesClient {
                         'ACCESS-PASSPHRASE': this.passphrase,
                         locale: 'en-US'
                     };
-                    
+
                     if (this.isSimulated) {
                         config.headers['paptrading'] = '1';
                     }
-                    
+
                     return config;
                 });
-                
+
                 // 复制响应拦截器
                 tempClient.interceptors.response.use(
                     (response) => {
-                        const {data} = response;
+                        const { data } = response;
                         if (!data) {
                             throw new Error('Bitget 返回空响应');
                         }
@@ -253,13 +253,13 @@ class BitgetFuturesClient {
                         throw error;
                     }
                 );
-                
+
                 const resp = await tempClient.get('/api/v2/mix/account/accounts', {
-                    params: {productType: this.tradeProductType}
+                    params: { productType: this.tradeProductType }
                 });
                 const list = resp.data?.data || resp.data || [];
                 const account = list.find((item) => (item.marginCoin || '').toUpperCase() === this.marginCoin) || list[0];
-                
+
                 if (account) {
                     return account;
                 }
@@ -272,10 +272,10 @@ class BitgetFuturesClient {
 
     async getPositions(symbol) {
         const params = symbol
-            ? {symbol: this._toV2Symbol(symbol), marginCoin: this.marginCoin, productType: this.tradeProductType}
-            : {productType: this.tradeProductType};
+            ? { symbol: this._toV2Symbol(symbol), marginCoin: this.marginCoin, productType: this.tradeProductType }
+            : { productType: this.tradeProductType };
         const path = symbol ? '/api/v2/mix/position/single-position' : '/api/v2/mix/position/all-position';
-        const resp = await this.client.get(path, {params});
+        const resp = await this.client.get(path, { params });
         const data = resp.data || [];
         return data;
     }
@@ -358,15 +358,15 @@ class BitgetFuturesClient {
         if (symbol) {
             params.symbol = symbol;
         }
-        return this.client.get('/api/copy/v1/trader/orders-track', {params});
+        return this.client.get('/api/copy/v1/trader/orders-track', { params });
     }
 
     async getTraderInfo(traderId) {
-        return this.client.get('/api/copy/v1/trader/info', {params: {traderId}});
+        return this.client.get('/api/copy/v1/trader/info', { params: { traderId } });
     }
 
     async getTraderPerformance(traderId, period = '7d') {
-        return this.client.get('/api/copy/v1/trader/performance', {params: {traderId, period}});
+        return this.client.get('/api/copy/v1/trader/performance', { params: { traderId, period } });
     }
 
     /**
@@ -409,22 +409,18 @@ class BitgetFuturesClient {
                     symbol: this._toV2Symbol(symbol)
                 }
             });
-            console.log(34,positions)
             // 如果有仓位，使用市价单平仓
-            if (positions && positions.data && positions.data.length > 0) {
-                for (const pos of positions.data) {
-                    if (parseFloat(pos.hold) > 0) {
-                        const closeSide = pos.posSide === 'long' ? 'sell' : 'buy';
-                        await this.client.post('/api/v3/trade/place-order', {
+            if (positions && positions.data && positions.data.list.length > 0) {
+                for (const pos of positions.data.list) {
+                        console.log(34, pos)
+
+                    if (parseFloat(pos.total) > 0) {
+                        const res = await this.client.post('/api/v3/trade/close-positions', {
                             category: 'USDT-FUTURES',
                             symbol: this._toV2Symbol(symbol),
-                            marginCoin: 'USDT',
-                            qty: pos.hold,
-                            side: closeSide,
-                            orderType: 'market',
-                            posSide: pos.posSide,
-                            reduceOnly: 'yes'
+                            posSide: pos.posSide
                         });
+                        console.log(55555555,res)
                     }
                 }
             }
@@ -433,12 +429,12 @@ class BitgetFuturesClient {
             console.log('平仓失败或无仓位:', error.message);
         }
 
-        // 设置杠杆
-        await this.client.post('/api/v3/account/set-leverage', {
-            category: 'USDT-FUTURES',
-            symbol: this._toV2Symbol(symbol),
-            leverage: `${leverage}`
-        });
+        // // 设置杠杆
+        // await this.client.post('/api/v3/account/set-leverage', {
+        //     category: 'USDT-FUTURES',
+        //     symbol: this._toV2Symbol(symbol),
+        //     leverage: `${leverage}`
+        // });
 
         // 使用v3版本的普通下单接口
         // 注意: 带单交易只是使用普通下单接口，不需要特殊的带单API
