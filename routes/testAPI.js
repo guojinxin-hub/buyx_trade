@@ -49,7 +49,7 @@ export const testAPI = async (req, res) => {
                 //   - direction: 'sell' - 交易方向 (buy/sell)
                 await apiTrade({
                     userOptions: option, 
-                    tradeData: [{symbol: 'ETH', direction: 'sell'}]
+                    tradeData: [{symbol: 'ETH', direction: 'buy'}]
                 })
             }
         }

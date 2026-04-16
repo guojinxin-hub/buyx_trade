@@ -400,9 +400,18 @@ class BitgetFuturesClient {
             slOrderPrice
         } = params;
 
+        // 先设置杠杆
+        await this.client.post('/api/v3/account/set-leverage', {
+            category: 'USDT-FUTURES',
+            symbol: this._toV2Symbol(symbol),
+            marginCoin,
+            leverage: `${leverage}`
+        });
+
         // 使用v3版本的普通下单接口
         // 注意: 带单交易只是使用普通下单接口，不需要特殊的带单API
         // v3 API需要使用USDT格式的symbol，不需要_UMCBL后缀
+
         const requestData = {
             category: 'USDT-FUTURES',
             symbol: this._toV2Symbol(symbol),
@@ -411,15 +420,18 @@ class BitgetFuturesClient {
             side: side === 'open_long' ? 'buy' : 'sell',
             orderType,
             posSide: side === 'open_long' ? 'long' : 'short',
-            leverage: `${leverage}`
+            reduceOnly: 'no',
+            timeInForce: 'ioc'
         };
 
         // 添加止盈止损参数（如果存在）
         if (tpTriggerPrice) {
             requestData.takeProfit = `${tpTriggerPrice}`;
+            requestData.tpTriggerBy = 'market';
         }
         if (slTriggerPrice) {
             requestData.stopLoss = `${slTriggerPrice}`;
+            requestData.slTriggerBy = 'market';
         }
         if (tpOrderPrice) {
             requestData.tpOrderType = 'limit';
@@ -430,6 +442,7 @@ class BitgetFuturesClient {
             requestData.slLimitPrice = `${slOrderPrice}`;
         }
 
+        console.log('下单参数:', requestData);
         return this.client.post('/api/v3/trade/place-order', requestData);
     }
 }
