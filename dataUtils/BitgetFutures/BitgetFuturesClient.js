@@ -9,7 +9,7 @@ class BitgetFuturesClient {
         this.passphrase = passphrase;
         // Bitget 官方也提供 api.bitget.fit 作为镜像域名
         // 你当前环境对部分域名可能会出现连接重置（ECONNRESET）
-        this.baseURLCandidates = ['https://api.bitget.com', 'https://api.bitget.fit'];
+        this.baseURLCandidates = ['https://api.bitget.com'];
         this.baseURL = this.baseURLCandidates[0];
         this.isSimulated = isSimulated;
 
@@ -104,9 +104,6 @@ class BitgetFuturesClient {
                 throw error;
             }
         );
-        console.log(this.apiKey,
-            this.secretKey,
-            this.passphrase)
     }
 
     _buildQueryString(params = {}) {
@@ -127,8 +124,6 @@ class BitgetFuturesClient {
 
         // 构建签名字符串
         const preHash = timestamp + method + requestPath + queryString + body;
-
-        console.log('Pre-hash string:', preHash); // 调试用
 
         // 生成签名 (与Java版本一致)
         return crypto
@@ -160,7 +155,6 @@ class BitgetFuturesClient {
             symbol: this._toV2Symbol(symbol),
             productType: this.tradeProductType
         });
-        console.log("resp?.data", resp?.data)
         if (isEmpty(resp?.data)) {
             return {}
         }
@@ -199,8 +193,6 @@ class BitgetFuturesClient {
         let lastError;
         for (const baseURL of this.baseURLCandidates) {
             try {
-                console.log(`尝试使用域名 ${baseURL} 获取账户信息`);
-                
                 // 创建临时客户端
                 const tempClient = axios.create({
                     baseURL: baseURL,
@@ -269,12 +261,10 @@ class BitgetFuturesClient {
                 const account = list.find((item) => (item.marginCoin || '').toUpperCase() === this.marginCoin) || list[0];
                 
                 if (account) {
-                    console.log(`成功使用域名 ${baseURL} 获取账户信息`);
                     return account;
                 }
             } catch (error) {
                 lastError = error;
-                console.warn(`使用域名 ${baseURL} 获取账户信息失败:`, error.message);
             }
         }
         throw lastError || new Error('所有 API 域名都无法获取账户信息');
@@ -377,6 +367,70 @@ class BitgetFuturesClient {
 
     async getTraderPerformance(traderId, period = '7d') {
         return this.client.get('/api/copy/v1/trader/performance', {params: {traderId, period}});
+    }
+
+    /**
+     * 带单下单方法
+     * 使用普通下单接口执行带单交易
+     * 
+     * @param {Object} params - 参数对象
+     * @param {string} params.symbol - 交易对符号 (如: BTCUSDT)
+     * @param {string} params.marginCoin - 保证金币种 (USDT)
+     * @param {string} params.side - 订单方向 (open_long: 开多, open_short: 开空)
+     * @param {string} params.orderType - 订单类型 (market: 市价单)
+     * @param {string} params.size - 订单数量
+     * @param {string} params.leverage - 杠杆倍数
+     * @param {string} params.tpTriggerPrice - 止盈触发价格
+     * @param {string} params.slTriggerPrice - 止损触发价格
+     * @param {string} params.tpOrderPrice - 止盈委托价格
+     * @param {string} params.slOrderPrice - 止损委托价格
+     * @returns {Promise<Object>} 下单结果
+     */
+    async placeLeaderOrder(params) {
+        const {
+            symbol,
+            marginCoin = 'USDT',
+            side, // open_long, open_short, close_long, close_short
+            orderType = 'market',
+            size,
+            leverage,
+            tpTriggerPrice,
+            slTriggerPrice,
+            tpOrderPrice,
+            slOrderPrice
+        } = params;
+
+        // 使用v3版本的普通下单接口
+        // 注意: 带单交易只是使用普通下单接口，不需要特殊的带单API
+        // v3 API需要使用USDT格式的symbol，不需要_UMCBL后缀
+        const requestData = {
+            category: 'USDT-FUTURES',
+            symbol: this._toV2Symbol(symbol),
+            marginCoin,
+            qty: `${size}`,
+            side: side === 'open_long' ? 'buy' : 'sell',
+            orderType,
+            posSide: side === 'open_long' ? 'long' : 'short',
+            leverage: `${leverage}`
+        };
+
+        // 添加止盈止损参数（如果存在）
+        if (tpTriggerPrice) {
+            requestData.takeProfit = `${tpTriggerPrice}`;
+        }
+        if (slTriggerPrice) {
+            requestData.stopLoss = `${slTriggerPrice}`;
+        }
+        if (tpOrderPrice) {
+            requestData.tpOrderType = 'limit';
+            requestData.tpLimitPrice = `${tpOrderPrice}`;
+        }
+        if (slOrderPrice) {
+            requestData.slOrderType = 'limit';
+            requestData.slLimitPrice = `${slOrderPrice}`;
+        }
+
+        return this.client.post('/api/v3/trade/place-order', requestData);
     }
 }
 
