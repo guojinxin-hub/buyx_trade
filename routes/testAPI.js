@@ -19,8 +19,8 @@ export const testAPI = async (req, res) => {
         const options = await UserTradeOptionsModel.find({
             isActive: true,
             isDelete: false,
-            belong: "Bybit",
-            userId: new ObjectId("66440d6e8ddd8b3685baaf4b")
+            belong: "Binance",
+            userId: new ObjectId("开始执行交易")
         }).lean()
         console.log("options", options)
         for (const option of options) {

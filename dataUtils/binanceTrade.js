@@ -44,6 +44,7 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
             await saveUserBalance(userOptions.userId, accountFunds)
             for (const item of futureContractData) {
                 // 执行交易
+                console.log("Binance 开始执行交易: ", userOptions.userId)
                 const result = await trader.executeTrade({
                     symbol: `${item.symbol}USDT`,
                     usdtAmount: Number(maxVolume),
@@ -55,7 +56,7 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
                     symbolInfo: item.symbolInfo,
                     settingDirection: direction,
                 });
-                console.log('交易结果:', result);
+                console.log('Binance 交易结果:', result);
 
                 // 保存交易记录
                 if (result.success && result.order && result.order.orderId) {
