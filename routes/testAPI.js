@@ -19,7 +19,7 @@ export const testAPI = async (req, res) => {
         const options = await UserTradeOptionsModel.find({
             isActive: true,
             isDelete: false,
-            belong: "Binance",
+            belong: "Gate",
             userId: new ObjectId("674136979736309d67fd1e3c")
         }).lean()
         console.log("options", options)
