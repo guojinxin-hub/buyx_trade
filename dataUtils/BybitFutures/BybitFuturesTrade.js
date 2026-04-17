@@ -322,21 +322,23 @@ class BybitFuturesTrader {
                     await this._delay(100);
 
                     // 开新仓并设置止盈止损
-                    const order = await this.client.placeOrder({
-                        symbol: symbol,
-                        side: direction,
-                        orderType: 'Market',
-                        qty: quantity.toString(),
-                        positionIdx: 0,
-                        takeProfit: takeProfitPrice.toString(),
-                        stopLoss: stopLossPrice.toString()
-                    });
-                    console.log('开仓结果:', order);
+                    if (settingDirection === "all" || direction === settingDirection) {
+                        const order = await this.client.placeOrder({
+                            symbol: symbol,
+                            side: direction,
+                            orderType: 'Market',
+                            qty: quantity.toString(),
+                            positionIdx: 0,
+                            takeProfit: takeProfitPrice.toString(),
+                            stopLoss: stopLossPrice.toString()
+                        });
+                        console.log('开仓结果:', order);
+                    }
                 }
                 // 同向持仓：盈利加仓
                 else if ((currentDirection === "Buy" && direction === "Buy") ||
                     (currentDirection === "Sell" && direction === "Sell")) {
-                    if (currentPosition.unrealisedPnl > 0) {
+                    if (currentPosition.unrealisedPnl > 0 && (settingDirection === "all" || direction === settingDirection)) {
                         console.log('盈利加仓');
                         const order = await this.client.placeOrder({
                             symbol: symbol,
