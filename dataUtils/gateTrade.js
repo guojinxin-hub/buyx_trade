@@ -172,11 +172,11 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                     }
                     console.log("position: ", position?.body)
                     // 逻辑 A: 没有持仓 -> 开仓
-                    if (!position || (position && position.body.size === 0)) {
+                    if (!position || (position && Number(position.body.size) === 0)) {
                         await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
                     } 
                     // 逻辑 B: 持仓方向与信号相反 (如持多收到卖空信号) -> 反手 (先平后开)
-                    else if (position && ((position.body.size < 0 && direction === "buy") || (position.body.size > 0 && direction === "sell"))) {
+                    else if (position && ((Number(position.body.size) < 0 && direction === "buy") || (Number(position.body.size) > 0 && direction === "sell"))) {
                         // 1. 调整杠杆（确保平仓时杠杆正确，虽然平仓通常不需要特定杠杆，但为了安全）
                         await futuresApi.updatePositionLeverage(settle, `${symbol}_USDT`, position.body.leverage, {})
                         await new Promise(resolve => setTimeout(resolve, 200));
@@ -184,7 +184,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                         // 2. 下市价平仓单 (price=0, tif='ioc' 即立即成交或取消)
                         await futuresApi.createFuturesOrder(settle, {
                             contract: `${symbol}_USDT`,
-                            size: position.body.size < 0 ? Math.abs(position.body.size) : -position.body.size,
+                            size: Number(position.body.size) < 0 ? Math.abs(Number(position.body.size)) : -Number(position.body.size),
                             price: 0,
                             tif: "ioc",
                         }, {})
@@ -194,7 +194,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                         await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
                     } 
                     // 逻辑 C: 持仓方向与信号一致 -> 只有盈利时才加仓
-                    else if (position && ((position.body.size > 0 && direction === "buy") || (position.body.size < 0 && direction === "sell"))) {
+                    else if (position && ((Number(position.body.size) > 0 && direction === "buy") || (Number(position.body.size) < 0 && direction === "sell"))) {
                         if (Number(position.body.unrealisedPnl) > 0) {
                             await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
                         }
