@@ -170,7 +170,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                     } catch (e) {
                         // console.log("没有仓位", e)
                     }
-                    
+                    console.log("position: ", position?.body)
                     // 逻辑 A: 没有持仓 -> 开仓
                     if (!position || (position && position.body.size === 0)) {
                         await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
