@@ -20,7 +20,7 @@ export const testAPI = async (req, res) => {
             isActive: true,
             isDelete: false,
             belong: "Binance",
-            userId: new ObjectId("开始执行交易")
+            userId: new ObjectId("674136979736309d67fd1e3c")
         }).lean()
         console.log("options", options)
         for (const option of options) {
