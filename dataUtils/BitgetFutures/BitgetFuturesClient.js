@@ -412,7 +412,7 @@ class BitgetFuturesClient {
             // 如果有仓位，使用市价单平仓
             if (positions && positions.data && positions.data.list.length > 0) {
                 for (const pos of positions.data.list) {
-                        console.log(34, pos)
+                    console.log(34, pos)
 
                     if (parseFloat(pos.total) > 0) {
                         const res = await this.client.post('/api/v3/trade/close-positions', {
@@ -420,7 +420,6 @@ class BitgetFuturesClient {
                             symbol: this._toV2Symbol(symbol),
                             posSide: pos.posSide
                         });
-                        console.log(55555555,res)
                     }
                 }
             }
@@ -428,13 +427,6 @@ class BitgetFuturesClient {
             // 平仓失败不影响继续下单
             console.log('平仓失败或无仓位:', error.message);
         }
-
-        // // 设置杠杆
-        // await this.client.post('/api/v3/account/set-leverage', {
-        //     category: 'USDT-FUTURES',
-        //     symbol: this._toV2Symbol(symbol),
-        //     leverage: `${leverage}`
-        // });
 
         // 使用v3版本的普通下单接口
         // 注意: 带单交易只是使用普通下单接口，不需要特殊的带单API
@@ -471,7 +463,20 @@ class BitgetFuturesClient {
         }
 
         console.log('下单参数:', requestData);
-        return this.client.post('/api/v3/trade/place-order', requestData);
+        const orderResult = await this.client.post('/api/v3/trade/place-order', requestData);
+
+        // // 设置杠杆
+        // try {
+        //     const res2 = await this.client.post('/api/v3/account/set-leverage', {
+        //         category: 'USDT-FUTURES',
+        //         leverage: `${leverage}`
+        //     });
+        //     console.log(6666666, res2)
+        // } catch (error) {
+        //     console.log('设置杠杆失败:', error.message);
+        // }
+
+        return orderResult;
     }
 }
 
