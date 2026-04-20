@@ -121,11 +121,11 @@ class BitgetLeaderTrade {
                 side: direction === 'buy' ? 'open_long' : 'open_short',
                 orderType: 'market',
                 size: `${size}`,
-                leverage: `${leverage}`,
-                tpTriggerPrice: takeProfitPrice,
-                slTriggerPrice: stopLossPrice,
-                tpOrderPrice: takeProfitPrice,
-                slOrderPrice: stopLossPrice
+                // leverage: `${leverage}`,
+                // tpTriggerPrice: takeProfitPrice,
+                // slTriggerPrice: stopLossPrice,
+                // tpOrderPrice: takeProfitPrice,
+                // slOrderPrice: stopLossPrice
             });
 
             return {
