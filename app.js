@@ -31,9 +31,9 @@ async function initializeApp() {
         console.log('数据库连接成功');
         app.use(routers);
         
-        // // 启动浮动盈利保护定时任务
-        // await startFloatingProfitProtectionScheduler();
-        // console.log('浮动盈利保护定时任务启动成功');
+        // 启动浮动盈利保护定时任务
+        await startFloatingProfitProtectionScheduler();
+        console.log('浮动盈利保护定时任务启动成功');
     } catch (error) {
         console.error('初始化应用失败:', error);
         process.exit(1);
