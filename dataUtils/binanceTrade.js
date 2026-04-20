@@ -5,9 +5,11 @@ import {saveUserBalance} from "./saveUserBalance";
 import {saveTradeRecord} from "./saveTradeRecord";
 import {formatPrice} from "./formatPrice";
 import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
+import moment from "moment";
 
 export const binanceTrade = async ({tradeData, userOptions}) => {
     try {
+        console.log(moment().format('YYYY-MM-DD HH:mm:ss'), 'Binance 开始执行交易: ')
         // 首先获取到当前可支持的币种信息
         const {apiKey, apiSecret, isTestOption, currency, isActive} = userOptions
         const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
@@ -29,6 +31,7 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
                 })
             }
         }
+        console.log(moment().format('YYYY-MM-DD HH:mm:ss'), 'Binance 交易币种: ',futureContractData )
         if (isActive) {
             const {direction, insurance, maxVolume, leverage, stopLoss, takeProfit} = userOptions
             const accountInfo = await trader.checkUserAccount();
@@ -41,6 +44,7 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
             await saveUserBalance(userOptions.userId, accountFunds)
             for (const item of futureContractData) {
                 // 执行交易
+                console.log("Binance 开始执行交易: ", userOptions.userId)
                 const result = await trader.executeTrade({
                     symbol: `${item.symbol}USDT`,
                     usdtAmount: Number(maxVolume),
@@ -52,7 +56,7 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
                     symbolInfo: item.symbolInfo,
                     settingDirection: direction,
                 });
-                console.log('交易结果:', result);
+                console.log('Binance 交易结果:', result);
 
                 // 保存交易记录
                 if (result.success && result.order && result.order.orderId) {
@@ -77,7 +81,7 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
             }
         }
     } catch (error) {
-        console.error('交易失败:', error);
+        console.error('Binance交易失败:', error);
     }
 }
 
@@ -110,7 +114,7 @@ export const updateProtectionStopLoss = async (req, res) => {
                 // 增加等待时间，确保币安API有足够的时间处理清除操作
                 await new Promise(resolve => setTimeout(resolve, 500));
             } catch (e) {
-                console.log("清除旧止损单失败", e);
+                console.log("Binance清除旧止损单失败", e);
             }
 
             // 5. 创建新的保护止损条件单
@@ -124,7 +128,7 @@ export const updateProtectionStopLoss = async (req, res) => {
                     closePosition: 'true', // 平仓
                 });
             } catch (e) {
-                console.log("创建保护止损单失败", e);
+                console.log("Binance创建保护止损单失败", e);
                 // 检查是否是因为重复订单错误
                 if (e.message.includes("An open stop or take profit order with GTE and closePosition in the direction is existing")) {
                     // 再次尝试清除止损订单（只清除止损，保留止盈）
@@ -139,7 +143,7 @@ export const updateProtectionStopLoss = async (req, res) => {
                             closePosition: 'true', // 平仓
                         });
                     } catch (retryError) {
-                        console.log("重试创建保护止损单失败", retryError);
+                        console.log("Binance重试创建保护止损单失败", retryError);
                         throw retryError;
                     }
                 } else {
@@ -153,7 +157,7 @@ export const updateProtectionStopLoss = async (req, res) => {
 
         return res.status(200).json({success: false, message: '保护止损价格无效'});
     } catch (e) {
-        console.log("更新保护止损单出错", e);
+        console.log("Binance更新保护止损单出错", e);
         return res.status(500).json({success: false, message: '更新保护止损单出错', error: e.message});
     }
 }

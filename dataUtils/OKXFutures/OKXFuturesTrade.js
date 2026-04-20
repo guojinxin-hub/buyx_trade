@@ -285,7 +285,7 @@ class OKXFuturesTrader {
             takeProfitPercent = 0,
             stopLossPercent = 0,
             symbolInfo,
-            settingDirection
+            settingDirection = "all"
         } = params;
 
         try {
@@ -332,24 +332,26 @@ class OKXFuturesTrader {
                     console.log(`发现反向持仓，先平仓: ${currentDirection}`);
                     await this.client.closePosition(currentPosition);
                     // 等待平仓完成
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    await this.client.placeOrderWithUsdt({
-                        instId,
-                        side: direction,
-                        size: size, // 100 USDT
-                        attachAlgoOrds: {
-                            slTriggerPx: stopLossPrice, // 止损触发价
-                            slOrdPx: -1, // -1表示市价止损
-                            slTriggerPxType: 'last', // 最新价触发
-                            tpOrdKind: "condition",
-                            tpOrdPx: -1, // 止盈价
-                            tpTriggerPx: takeProfitPrice, // 止盈价
-                            tpTriggerPxType: 'last',
-                        }
-                    });
+                    if (settingDirection === "all" || direction === settingDirection) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await this.client.placeOrderWithUsdt({
+                            instId,
+                            side: direction,
+                            size: size, // 100 USDT
+                            attachAlgoOrds: {
+                                slTriggerPx: stopLossPrice, // 止损触发价
+                                slOrdPx: -1, // -1表示市价止损
+                                slTriggerPxType: 'last', // 最新价触发
+                                tpOrdKind: "condition",
+                                tpOrdPx: -1, // 止盈价
+                                tpTriggerPx: takeProfitPrice, // 止盈价
+                                tpTriggerPxType: 'last',
+                            }
+                        });
+                    }
                 } else if (currentPosition.pos > 0 && direction === "buy" || currentPosition.pos < 0 && direction === "sell") {
                     // 盈利加仓
-                    if (currentPosition.upl > 0) {
+                    if (currentPosition.upl > 0 && (settingDirection === "all" || direction === settingDirection)) {
                         const order = await this.client.placeOrderWithUsdt({
                             instId,
                             side: direction,
