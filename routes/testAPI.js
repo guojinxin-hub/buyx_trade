@@ -33,24 +33,15 @@ export const testAPI = async (req, res) => {
         const options = await UserTradeOptionsModel.find({
             isActive: true,
             isDelete: false,
-            belong: "Bitget_Leader",
-            userId: new ObjectId("66440d6e8ddd8b3685baaf4b")
+            belong: "Gate",
+            userId: new ObjectId("674136979736309d67fd1e3c")
         }).lean()
         console.log("options", options)
 
         // 步骤2: 遍历每个交易配置并执行交易
         for (const option of options) {
             if (!isEmpty(option)) {
-                // 调用apiTrade函数执行带单交易
-                // 参数说明:
-                // - userOptions: 用户交易配置，包含API密钥、交易参数等
-                // - tradeData: 交易数据数组，包含symbol和direction
-                //   - symbol: 'ETH' - 交易对符号
-                //   - direction: 'sell' - 交易方向 (buy/sell)
-                await apiTrade({
-                    userOptions: option, 
-                    tradeData: [{symbol: 'ETH', direction: 'sell'}]
-                })
+                await apiTrade({userOptions: option, tradeData: [{symbol: 'AAVE', direction: 'sell'}]})
             }
         }
 

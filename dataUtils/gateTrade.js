@@ -2,8 +2,8 @@ import {intersectionWith, isEmpty} from "lodash";
 import {formatPrice} from "./formatPrice.js";
 import {decrypt} from "./utils/index.js";
 import {saveTradeRecord} from "./saveTradeRecord.js";
-import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
 import {saveUserBalance} from "./saveUserBalance.js";
+import moment from "moment";
 
 const GateApi = require('gate-api');
 const TRADE_API_URL = process.env.TRADE_API_URL
@@ -96,6 +96,7 @@ export const updateProtectionStopLoss = async (req, res) => {
 
 export const gateTrade = async ({ tradeData, userOptions }) => {
     try {
+        console.log(moment().format("YYYY-MM-DD HH:mm:ss"),userOptions.userId,"Gate 交易开始");
         // 1. 初始化 API 客户端
         const {apiKey, apiSecret, isTestOption, currency} = userOptions
         client.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
@@ -126,7 +127,8 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                 //  console.log("获取合约币种出错", e)
             }
         }
-        
+        console.log(moment().format("YYYY-MM-DD HH:mm:ss"),userOptions.userId,"币种",futureContractData);
+
         // 5. 检查用户是否激活交易
         if (userOptions.isActive) {
             // 5.1 获取并保存账户余额
@@ -154,12 +156,12 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
             
             // 5.3 匹配交易数据与合约数据
             const intersectionData = intersectionWith(filterTradeDate, futureContractData, (a, b) => `${a.symbol}_USDT` === b.name)
-            
+
             // 5.4 遍历处理每个交易信号
             for (const item of intersectionData) {
                 try {
                     const {symbol, direction} = item
-                    console.log("symbol: ", symbol, "direction: ", direction)
+                    console.log("Gate symbol: ", symbol, "direction: ", direction)
                     
                     // 获取当前持仓
                     let position = null
@@ -168,13 +170,13 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                     } catch (e) {
                         // console.log("没有仓位", e)
                     }
-                    
+                    console.log("position: ", position?.body)
                     // 逻辑 A: 没有持仓 -> 开仓
-                    if (!position || (position && position.body.size === 0)) {
+                    if (!position || (position && Number(position.body.size) === 0)) {
                         await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
                     } 
                     // 逻辑 B: 持仓方向与信号相反 (如持多收到卖空信号) -> 反手 (先平后开)
-                    else if (position && ((position.body.size < 0 && direction === "buy") || (position.body.size > 0 && direction === "sell"))) {
+                    else if (position && ((Number(position.body.size) < 0 && direction === "buy") || (Number(position.body.size) > 0 && direction === "sell"))) {
                         // 1. 调整杠杆（确保平仓时杠杆正确，虽然平仓通常不需要特定杠杆，但为了安全）
                         await futuresApi.updatePositionLeverage(settle, `${symbol}_USDT`, position.body.leverage, {})
                         await new Promise(resolve => setTimeout(resolve, 200));
@@ -182,7 +184,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                         // 2. 下市价平仓单 (price=0, tif='ioc' 即立即成交或取消)
                         await futuresApi.createFuturesOrder(settle, {
                             contract: `${symbol}_USDT`,
-                            size: position.body.size < 0 ? Math.abs(position.body.size) : -position.body.size,
+                            size: Number(position.body.size) < 0 ? Math.abs(Number(position.body.size)) : -Number(position.body.size),
                             price: 0,
                             tif: "ioc",
                         }, {})
@@ -192,26 +194,26 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                         await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
                     } 
                     // 逻辑 C: 持仓方向与信号一致 -> 只有盈利时才加仓
-                    else if (position && ((position.body.size > 0 && direction === "buy") || (position.body.size < 0 && direction === "sell"))) {
+                    else if (position && ((Number(position.body.size) > 0 && direction === "buy") || (Number(position.body.size) < 0 && direction === "sell"))) {
                         if (Number(position.body.unrealisedPnl) > 0) {
                             await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
                         }
                     }
                     await new Promise(resolve => setTimeout(resolve, 200));
                 } catch (e) {
-                    console.log("e", e)
+                    console.log("Gate", e)
                 }
             }
         }
     } catch (e) {
-        console.log("e", e)
+        console.log("Gate", e)
     }
 }
 
 // 下单
 const createOrder = async (futuresApi, futureContractData, settle, symbol, direction, userOptions) => {
     try {
-        console.log("下单", userOptions.userId)
+        console.log("Gate下单", userOptions.userId)
         
         // 1. 检查用户是否允许该方向的交易 (userOptions.direction 为 "all", "buy" 或 "sell")
         if ((userOptions.direction === "all") || userOptions.direction === direction) {
@@ -346,7 +348,7 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
             }
         }
     } catch (e) {
-        console.log("下单出错", e)
+        console.log("Gate 下单出错", e)
     }
 }
 
