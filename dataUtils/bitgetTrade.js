@@ -3,6 +3,7 @@ import BitgetFuturesTrade from "./BitgetFutures/BitgetFuturesTrade";
 import BitgetLeaderTrade from "./BitgetFutures/BitgetLeaderTrade";
 import {decrypt} from "./utils";
 import {saveUserBalance} from "./saveUserBalance";
+import { saveTradeRecord } from "./saveTradeRecord";
 
 export const bitgetTrade = async ({tradeData, userOptions}) => {
     console.log("Bitget交易启动");
@@ -80,6 +81,25 @@ export const bitgetTrade = async ({tradeData, userOptions}) => {
                     settingDirection: direction
                 });
                 console.log('Bitget 交易结果:', result);
+
+                // 保存交易记录
+                if (result.success && result.order) {
+                    try {
+                        await saveTradeRecord(userOptions.userId, {
+                            symbol: item.symbol,
+                            price: result.order.price || '0',
+                            size: result.order.size || '0',
+                            direction: item.direction,
+                            exchange: 'bitget',
+                            orderId: result.order.orderId || result.order.id || '',
+                            leverage: String(leverage),
+                            status: 'pending'
+                        });
+                        console.log(`交易记录保存成功: ${result.order.orderId || result.order.id}`);
+                    } catch (error) {
+                        console.error(`交易记录保存失败: ${error.message}`);
+                    }
+                }
                 await new Promise((r) => setTimeout(r, 120));
             }
         }
@@ -209,6 +229,25 @@ export const bitgetLeaderTrade = async ({tradeData, userOptions}) => {
                     settingDirection: direction  // 使用userOptions中的direction进行过滤
                 });
                 console.log('Bitget 带单交易结果:', result);
+
+                // 保存交易记录
+                if (result.success && result.order) {
+                    try {
+                        await saveTradeRecord(userOptions.userId, {
+                            symbol: item.symbol,
+                            price: result.order.price || '0',
+                            size: result.order.size || '0',
+                            direction: item.direction,
+                            exchange: 'bitget_leader',
+                            orderId: result.order.orderId || result.order.id || '',
+                            leverage: String(leverage),
+                            status: 'pending'
+                        });
+                        console.log(`交易记录保存成功: ${result.order.orderId || result.order.id}`);
+                    } catch (error) {
+                        console.error(`交易记录保存失败: ${error.message}`);
+                    }
+                }
 
                 // 延迟500ms，避免请求过于频繁
                 await new Promise((r) => setTimeout(r, 500));

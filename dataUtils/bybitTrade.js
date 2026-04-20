@@ -1,6 +1,7 @@
 import { intersectionWith, isEmpty } from "lodash";
 import BybitFuturesTrader from "./BybitFutures/BybitFuturesTrade";
 import { saveUserBalance } from "./saveUserBalance";
+import { saveTradeRecord } from "./saveTradeRecord";
 import {decrypt} from "./utils";
 
 /**
@@ -72,10 +73,81 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
                     settingDirection: direction === 'all' ? 'all' : (direction === 'buy' ? 'Buy' : 'Sell'),
                 });
                 console.log('交易结果:', result);
+
+                // 保存交易记录
+                if (result.success && result.order) {
+                    try {
+                        await saveTradeRecord(userOptions.userId, {
+                            symbol: item.symbol,
+                            price: result.order.price || '0',
+                            size: result.order.qty || '0',
+                            direction: item.direction,
+                            exchange: 'bybit',
+                            orderId: result.order.orderId || result.order.id || '',
+                            leverage: String(leverage),
+                            status: 'pending'
+                        });
+                        console.log(`交易记录保存成功: ${result.order.orderId || result.order.id}`);
+                    } catch (error) {
+                        console.error(`交易记录保存失败: ${error.message}`);
+                    }
+                }
             }
         }
     } catch (error) {
         console.error('Bybit交易失败:', error);
+    }
+};
+
+/**
+ * 获取 Bybit 交易所的持仓信息
+ * @param {Object} userOptions - 用户配置对象
+ * @returns {Promise<Array>} 持仓信息列表
+ */
+export const getBybitPositions = async (userOptions) => {
+    try {
+        const { apiKey, apiSecret, isTestOption = true } = userOptions;
+        const trader = new BybitFuturesTrader({
+            apiKey: decrypt(apiKey),
+            secretKey: decrypt(apiSecret),
+            isTestnet: isTestOption
+        });
+
+        // 获取所有持仓
+        const positions = await trader.getPositions();
+
+        if (!positions || !Array.isArray(positions)) {
+            return [];
+        }
+
+        // 过滤出有持仓的仓位，并转换为统一格式
+        return positions
+            .filter(position => Math.abs(parseFloat(position.pos)) > 0)
+            .map(position => {
+                const symbol = (position.instId || '').replace('USDT', '');
+                const direction = position.side === 'Buy' ? 'buy' : 'sell';
+                const entryPrice = parseFloat(position.avgPx) || 0;
+                const markPrice = parseFloat(position.markPx || position.last || 0);
+                const pnl = parseFloat(position.upl) || 0;
+                const margin = parseFloat(position.mgn) || 0;
+                const profitPercentage = margin > 0 ? (pnl / margin) * 100 : 0;
+
+                return {
+                    symbol,
+                    direction,
+                    entryPrice,
+                    avgPrice: entryPrice,
+                    markPrice,
+                    lastPrice: markPrice,
+                    currentPrice: markPrice,
+                    size: Math.abs(parseFloat(position.pos)),
+                    exchange: 'bybit',
+                    unrealisedPnl: profitPercentage
+                };
+            });
+    } catch (error) {
+        console.error('获取 Bybit 交易所持仓信息出错:', error.message);
+        return [];
     }
 };
 
