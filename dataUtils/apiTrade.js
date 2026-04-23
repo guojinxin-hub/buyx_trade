@@ -110,6 +110,10 @@ export const getUserPositions = async (userOption) => {
                 console.log('调用 Bitget 带单的持仓信息获取');
                 const { getBitgetLeaderPositions } = await import('./bitgetTrade');
                 return await getBitgetLeaderPositions(userOption);
+            case 'Bybit':
+                console.log('调用 Bybit 交易所的持仓信息获取');
+                const { getBybitPositions } = await import('./bybitTrade');
+                return await getBybitPositions(userOption);
             default:
                 console.error('不支持的交易所:', belong);
                 return [];

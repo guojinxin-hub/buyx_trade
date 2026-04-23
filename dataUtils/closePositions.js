@@ -19,6 +19,12 @@ const OKXFuturesTrade = require('./OKXFutures/OKXFuturesTrade');
 // Bitget API
 const BitgetFuturesTrade = require('./BitgetFutures/BitgetFuturesTrade');
 
+// Bitget Leader API
+const BitgetLeaderTrade = require('./BitgetFutures/BitgetLeaderTrade');
+
+// Bybit API
+const BybitFuturesTrade = require('./BybitFutures/BybitFuturesTrade');
+
 // 网络请求重试函数
 const retryRequest = async (fn, retries = 3, delay = 2000) => {
     for (let i = 0; i < retries; i++) {
@@ -59,6 +65,12 @@ export const executeClosePositions = async ({tradeData, userOptions}) => {
                 break;
             case 'Bitget':
                 await executeBitgetClosePositions({tradeData, userOptions});
+                break;
+            case 'Bitget_Leader':
+                await executeBitgetLeaderClosePositions({tradeData, userOptions});
+                break;
+            case 'Bybit':
+                await executeBybitClosePositions({tradeData, userOptions});
                 break;
             default:
                 console.log(`不支持的交易所类型: ${belong}`);
@@ -359,6 +371,181 @@ export const executeBitgetClosePositions = async ({tradeData, userOptions}) => {
         console.log(`为用户 ${userOptions.userId} 在Bitget交易所的平仓操作执行完成`);
     } catch (error) {
         console.error(`为用户 ${userOptions.userId} 在Bitget交易所执行平仓操作失败:`, error.message);
+        throw error;
+    }
+};
+
+/**
+ * 为Bitget带单交易所执行平仓操作
+ * @param {Object} params - 参数对象
+ * @param {Array} params.tradeData - 交易数据（可选，不提供时自动获取所有持仓）
+ * @param {Object} params.userOptions - 用户交易配置
+ * @returns {Promise<void>}
+ */
+export const executeBitgetLeaderClosePositions = async ({tradeData, userOptions}) => {
+    try {
+        console.log(`为用户 ${userOptions.userId} 在Bitget带单交易所执行平仓操作`);
+
+        // 初始化 Bitget 带单客户端（使用 BitgetLeaderTrade）
+        const {apiKey, apiSecret, passphrase, isTestOption} = userOptions;
+        const trader = new BitgetLeaderTrade({
+            apiKey: decrypt(apiKey),
+            secretKey: decrypt(apiSecret),
+            passphrase: passphrase,
+            isSimulated: isTestOption
+        });
+
+        // 获取账户信息（使用 BitgetLeaderTrade 的 getAccountInfo 方法）
+        let accountInfo = null;
+        try {
+            accountInfo = await retryRequest(() => trader.client.getAccount(), 3, 3000);
+            const accountFunds = {
+                total: accountInfo?.equity ?? accountInfo?.accountEquity ?? accountInfo?.totalEquity ?? accountInfo?.available ?? '0',
+                unrealisedPnl: accountInfo?.unrealizedPL ?? accountInfo?.unrealisedPnl ?? accountInfo?.upl ?? '0',
+                available: accountInfo?.available ?? accountInfo?.availableBalance ?? accountInfo?.availBal ?? '0'
+            };
+            await saveUserBalance(userOptions.userId, accountFunds);
+        } catch (e) {
+            console.log('获取账户信息失败，继续执行平仓操作:', e.message);
+        }
+
+        let symbolsToClose = [];
+
+        if (tradeData && tradeData.length > 0) {
+            // 使用提供的交易数据
+            symbolsToClose = tradeData.map(item => item.symbol);
+        } else {
+            // 自动获取所有持仓（使用 v3 API）
+            console.log(`自动获取Bitget带单交易所的所有持仓`);
+            try {
+                // 使用 v3 API 获取持仓
+                const positionsResp = await retryRequest(() => trader.client.client.get('/api/v3/position/current-position', {
+                    params: {
+                        category: 'USDT-FUTURES'
+                    }
+                }), 3, 3000);
+                
+                if (positionsResp && positionsResp.data && positionsResp.data.list) {
+                    const positions = positionsResp.data.list;
+                    // 过滤有持仓的交易对
+                    const positionsWithBalance = positions.filter(pos => parseFloat(pos.total) > 0);
+                    symbolsToClose = positionsWithBalance.map(pos => pos.symbol.replace('USDT', ''));
+                }
+                console.log(`找到 ${symbolsToClose.length} 个持仓`);
+            } catch (e) {
+                console.log('获取持仓失败，使用空列表:', e.message);
+                symbolsToClose = [];
+            }
+        }
+
+        // 遍历处理每个交易对
+        for (const symbol of symbolsToClose) {
+            try {
+                console.log(`执行平仓操作: ${symbol}`);
+
+                // 使用 v3 API 获取当前持仓
+                const positionsResp = await retryRequest(() => trader.client.client.get('/api/v3/position/current-position', {
+                    params: {
+                        category: 'USDT-FUTURES',
+                        symbol: trader.client._toV2Symbol(symbol)
+                    }
+                }), 3, 3000);
+
+                // 如果有持仓，执行平仓操作
+                if (positionsResp && positionsResp.data && positionsResp.data.list && positionsResp.data.list.length > 0) {
+                    for (const pos of positionsResp.data.list) {
+                        if (parseFloat(pos.total) > 0) {
+                            console.log(`执行平仓操作: ${symbol}, 持仓大小: ${pos.total}, 方向: ${pos.posSide}`);
+
+                            // 使用 v3 API 执行平仓
+                            const result = await retryRequest(() => trader.client.client.post('/api/v3/trade/close-positions', {
+                                category: 'USDT-FUTURES',
+                                symbol: trader.client._toV2Symbol(symbol),
+                                posSide: pos.posSide
+                            }), 3, 3000);
+                            console.log(`平仓结果: ${symbol}`, result);
+
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error(`执行 ${symbol} 平仓操作失败:`, e.message);
+                // 继续处理下一个交易对
+                continue;
+            }
+        }
+
+        console.log(`为用户 ${userOptions.userId} 在Bitget带单交易所的平仓操作执行完成`);
+    } catch (error) {
+        console.error(`为用户 ${userOptions.userId} 在Bitget带单交易所执行平仓操作失败:`, error.message);
+        throw error;
+    }
+};
+
+/**
+ * 为Bybit交易所执行平仓操作
+ * @param {Object} params - 参数对象
+ * @param {Array} params.tradeData - 交易数据（可选，不提供时自动获取所有持仓）
+ * @param {Object} params.userOptions - 用户交易配置
+ * @returns {Promise<void>}
+ */
+export const executeBybitClosePositions = async ({tradeData, userOptions}) => {
+    try {
+        console.log(`为用户 ${userOptions.userId} 在Bybit交易所执行平仓操作`);
+
+        // 初始化 Bybit 客户端
+        const {apiKey, apiSecret, isTestOption} = userOptions;
+        const trader = new BybitFuturesTrade({
+            apiKey: decrypt(apiKey),
+            secretKey: decrypt(apiSecret),
+            isTestnet: isTestOption
+        });
+
+        // 获取账户信息
+        const accountInfo = await retryRequest(() => trader.getAccountInfo());
+        const accountFunds = {
+            total: accountInfo.balance?.total?.toString() || '0',
+            unrealisedPnl: accountInfo.balance?.unrealisedPnl?.toString() || '0',
+            available: accountInfo.balance?.available?.toString() || '0'
+        };
+        await saveUserBalance(userOptions.userId, accountFunds);
+
+        let symbolsToClose = [];
+
+        if (tradeData && tradeData.length > 0) {
+            // 使用提供的交易数据
+            symbolsToClose = tradeData.map(item => item.symbol);
+        } else {
+            // 使用 getUserPositions 获取所有持仓
+            console.log(`自动获取Bybit交易所的所有持仓`);
+            const userPositions = await getUserPositions(userOptions);
+            if (userPositions && userPositions.length > 0) {
+                symbolsToClose = userPositions.map(position => position.symbol);
+            }
+            console.log(`找到 ${symbolsToClose.length} 个持仓`);
+        }
+
+        // 遍历处理每个交易对
+        for (const symbol of symbolsToClose) {
+            try {
+                console.log(`执行平仓操作: ${symbol}`);
+
+                // 执行平仓操作
+                const result = await retryRequest(() => trader.closePosition(`${symbol}USDT`));
+                console.log(`平仓结果: ${symbol}`, result);
+
+                await new Promise(resolve => setTimeout(resolve, 300));
+            } catch (e) {
+                console.error(`执行 ${symbol} 平仓操作失败:`, e.message);
+                // 继续处理下一个交易对
+                continue;
+            }
+        }
+
+        console.log(`为用户 ${userOptions.userId} 在Bybit交易所的平仓操作执行完成`);
+    } catch (error) {
+        console.error(`为用户 ${userOptions.userId} 在Bybit交易所执行平仓操作失败:`, error.message);
         throw error;
     }
 };

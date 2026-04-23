@@ -380,6 +380,51 @@ async function handleUserFloatingProfitProtection(userOption) {
                     }
                     break;
 
+                case 'Bitget_Leader':
+                    {
+                        const BitgetFuturesTrade = require('./BitgetFutures/BitgetFuturesTrade');
+                        const { decrypt } = require('./utils');
+                        const trader = new BitgetFuturesTrade({
+                            apiKey: decrypt(apiKey),
+                            secretKey: decrypt(apiSecret),
+                            passphrase: passphrase,
+                            isSimulated: isTestOption
+                        });
+
+                        // 获取账户信息
+                        const accountInfo = await retryAsync(() => trader.getAccountInfo(), 3, 3000);
+
+                        // 计算总浮动收益率
+                        total = parseFloat(accountInfo.balance.total) || 0;
+                        totalFloatingProfit = parseFloat(accountInfo.balance.unrealisedPnl) || 0;
+                        totalBenchmark = total - totalFloatingProfit;
+                        availableBalance = parseFloat(accountInfo.balance.available) || 0;
+                        totalFloatingProfitRate = totalBenchmark > 0 ? (totalFloatingProfit / totalBenchmark) * 100 : 0;
+                    }
+                    break;
+
+                case 'Bybit':
+                    {
+                        const BybitFuturesTrade = require('./BybitFutures/BybitFuturesTrade');
+                        const { decrypt } = require('./utils');
+                        const trader = new BybitFuturesTrade({
+                            apiKey: decrypt(apiKey),
+                            secretKey: decrypt(apiSecret),
+                            isTestnet: isTestOption
+                        });
+
+                        // 获取账户信息
+                        const accountInfo = await retryAsync(() => trader.getAccountInfo(), 3, 3000);
+
+                        // 计算总浮动收益率
+                        total = parseFloat(accountInfo.balance.total) || 0;
+                        totalFloatingProfit = parseFloat(accountInfo.balance.unrealisedPnl) || 0;
+                        totalBenchmark = total - totalFloatingProfit;
+                        availableBalance = parseFloat(accountInfo.balance.available) || 0;
+                        totalFloatingProfitRate = totalBenchmark > 0 ? (totalFloatingProfit / totalBenchmark) * 100 : 0;
+                    }
+                    break;
+
                 default:
                     logger.error(`不支持的交易所类型: ${belong}`);
                     return { success: false, message: '不支持的交易所类型' };
