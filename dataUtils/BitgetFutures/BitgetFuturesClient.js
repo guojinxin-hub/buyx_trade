@@ -386,6 +386,49 @@ class BitgetFuturesClient {
      * @param {string} params.slOrderPrice - 止损委托价格
      * @returns {Promise<Object>} 下单结果
      */
+    /**
+     * 获取当前仓位信息
+     * @param {string} symbol - 交易对符号(可选)
+     * @returns {Promise<Object>} 当前仓位信息
+     */
+    async getCurrentPosition(symbol) {
+        const params = {
+            category: 'USDT-FUTURES'
+        };
+        
+        if (symbol) {
+            params.symbol = this._toV2Symbol(symbol);
+        }
+        
+        return await this.client.get('/api/v3/position/current-position', {
+            params
+        });
+    }
+
+    /**
+     * 平仓方法
+     * @param {Object} params - 平仓参数
+     * @param {string} params.symbol - 交易对符号(可选)
+     * @param {string} params.posSide - 仓位方向(可选)
+     * @returns {Promise<Object>} 平仓结果
+     */
+    async closePositions(params = {}) {
+        const { symbol, posSide } = params;
+        const requestData = {
+            category: 'USDT-FUTURES'
+        };
+        
+        if (symbol) {
+            requestData.symbol = this._toV2Symbol(symbol);
+        }
+        
+        if (posSide) {
+            requestData.posSide = posSide;
+        }
+        
+        return await this.client.post('/api/v3/trade/close-positions', requestData);
+    }
+
     async placeLeaderOrder(params) {
         const {
             symbol,
@@ -403,21 +446,13 @@ class BitgetFuturesClient {
         // 先平仓当前币种的仓位
         try {
             // 获取当前仓位信息
-            const positions = await this.client.get('/api/v3/position/current-position', {
-                params: {
-                    category: 'USDT-FUTURES',
-                    symbol: this._toV2Symbol(symbol)
-                }
-            });
+            const positions = await this.getCurrentPosition(symbol);
             // 如果有仓位，使用市价单平仓
             if (positions && positions.data && positions.data.list.length > 0) {
                 for (const pos of positions.data.list) {
-                    console.log(34, pos)
-
                     if (parseFloat(pos.total) > 0) {
-                        const res = await this.client.post('/api/v3/trade/close-positions', {
-                            category: 'USDT-FUTURES',
-                            symbol: this._toV2Symbol(symbol),
+                        const res = await this.closePositions({
+                            symbol,
                             posSide: pos.posSide
                         });
                     }
