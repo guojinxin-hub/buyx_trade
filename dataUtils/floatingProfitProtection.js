@@ -392,13 +392,13 @@ async function handleUserFloatingProfitProtection(userOption) {
                         });
 
                         // 获取账户信息
-                        const accountInfo = await retryAsync(() => trader.getAccountInfo(), 3, 3000);
+                        const accountInfo = await retryAsync(() =>  trader.client.getAccountAssets(), 3, 3000);
 
                         // 计算总浮动收益率
-                        total = parseFloat(accountInfo.balance.total) || 0;
-                        totalFloatingProfit = parseFloat(accountInfo.balance.unrealisedPnl) || 0;
+                        total = parseFloat(accountInfo?.accountEquity || accountInfo?.usdtEquity || accountInfo?.effEquity || '0') || 0;
+                        totalFloatingProfit = parseFloat(accountInfo?.unrealisedPnl || accountInfo?.usdtUnrealisedPnl || accountInfo?.btcUnrealizedPnl || '0') || 0;
                         totalBenchmark = total - totalFloatingProfit;
-                        availableBalance = parseFloat(accountInfo.balance.available) || 0;
+                        availableBalance = parseFloat(accountInfo?.available || accountInfo?.assets?.find(asset => asset.coin === 'USDT')?.available || '0') || 0;
                         totalFloatingProfitRate = totalBenchmark > 0 ? (totalFloatingProfit / totalBenchmark) * 100 : 0;
                     }
                     break;

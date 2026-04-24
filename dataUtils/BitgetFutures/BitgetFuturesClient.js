@@ -429,6 +429,16 @@ class BitgetFuturesClient {
         return await this.client.post('/api/v3/trade/close-positions', requestData);
     }
 
+    /**
+     * 获取账户资产信息
+     * @returns {Promise<Object>} 账户资产信息
+     */
+    async getAccountAssets() {
+        return await this.client.get('/api/v3/account/assets', {
+         
+        });
+    }
+
     async placeLeaderOrder(params) {
         const {
             symbol,

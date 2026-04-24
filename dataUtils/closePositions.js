@@ -398,11 +398,11 @@ export const executeBitgetLeaderClosePositions = async ({tradeData, userOptions}
         // 获取账户信息（使用 BitgetLeaderTrade 的 getAccountInfo 方法）
         let accountInfo = null;
         try {
-            accountInfo = await retryRequest(() => trader.client.getAccount(), 3, 3000);
+            accountInfo = await retryRequest(() => trader.client.getAccountAssets(), 3, 3000);
             const accountFunds = {
-                total: accountInfo?.equity ?? accountInfo?.accountEquity ?? accountInfo?.totalEquity ?? accountInfo?.available ?? '0',
-                unrealisedPnl: accountInfo?.unrealizedPL ?? accountInfo?.unrealisedPnl ?? accountInfo?.upl ?? '0',
-                available: accountInfo?.available ?? accountInfo?.availableBalance ?? accountInfo?.availBal ?? '0'
+                total: accountInfo?.accountEquity ?? accountInfo?.usdtEquity ?? accountInfo?.effEquity ?? '0',
+                unrealisedPnl: accountInfo?.unrealisedPnl ?? accountInfo?.usdtUnrealisedPnl ?? accountInfo?.btcUnrealizedPnl ?? '0',
+                available: accountInfo?.available ?? accountInfo?.assets?.find(asset => asset.coin === 'USDT')?.available ?? '0'
             };
             await saveUserBalance(userOptions.userId, accountFunds);
         } catch (e) {
@@ -415,15 +415,11 @@ export const executeBitgetLeaderClosePositions = async ({tradeData, userOptions}
             // 使用提供的交易数据
             symbolsToClose = tradeData.map(item => item.symbol);
         } else {
-            // 自动获取所有持仓（使用 v3 API）
+            // 自动获取所有持仓（使用封装好的方法）
             console.log(`自动获取Bitget带单交易所的所有持仓`);
             try {
-                // 使用 v3 API 获取持仓
-                const positionsResp = await retryRequest(() => trader.client.client.get('/api/v3/position/current-position', {
-                    params: {
-                        category: 'USDT-FUTURES'
-                    }
-                }), 3, 3000);
+                // 使用封装好的 getCurrentPosition 方法获取持仓
+                const positionsResp = await retryRequest(() => trader.client.getCurrentPosition(), 3, 3000);
                 
                 if (positionsResp && positionsResp.data && positionsResp.data.list) {
                     const positions = positionsResp.data.list;
@@ -443,13 +439,8 @@ export const executeBitgetLeaderClosePositions = async ({tradeData, userOptions}
             try {
                 console.log(`执行平仓操作: ${symbol}`);
 
-                // 使用 v3 API 获取当前持仓
-                const positionsResp = await retryRequest(() => trader.client.client.get('/api/v3/position/current-position', {
-                    params: {
-                        category: 'USDT-FUTURES',
-                        symbol: trader.client._toV2Symbol(symbol)
-                    }
-                }), 3, 3000);
+                // 使用封装好的 getCurrentPosition 方法获取当前持仓
+                const positionsResp = await retryRequest(() => trader.client.getCurrentPosition(symbol), 3, 3000);
 
                 // 如果有持仓，执行平仓操作
                 if (positionsResp && positionsResp.data && positionsResp.data.list && positionsResp.data.list.length > 0) {
@@ -457,10 +448,9 @@ export const executeBitgetLeaderClosePositions = async ({tradeData, userOptions}
                         if (parseFloat(pos.total) > 0) {
                             console.log(`执行平仓操作: ${symbol}, 持仓大小: ${pos.total}, 方向: ${pos.posSide}`);
 
-                            // 使用 v3 API 执行平仓
-                            const result = await retryRequest(() => trader.client.client.post('/api/v3/trade/close-positions', {
-                                category: 'USDT-FUTURES',
-                                symbol: trader.client._toV2Symbol(symbol),
+                            // 使用封装好的 closePositions 方法执行平仓
+                            const result = await retryRequest(() => trader.client.closePositions({
+                                symbol,
                                 posSide: pos.posSide
                             }), 3, 3000);
                             console.log(`平仓结果: ${symbol}`, result);
