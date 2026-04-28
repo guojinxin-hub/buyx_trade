@@ -236,7 +236,7 @@ class OKXFuturesTrader {
     }
 
     /**
-     * 平仓
+     * 平仓（使用市价单）
      */
     async closePosition(instId) {
         try {
@@ -265,6 +265,32 @@ class OKXFuturesTrader {
                 tdMode: 'cross',
                 posSide: position.posSide || 'net',
                 reduceOnly: true
+            });
+        } catch (error) {
+            console.error('平仓失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * 平仓（使用OKX专门的平仓接口）
+     */
+    async closePositionAPI(instId) {
+        try {
+            const positions = await this.client.getPositions(instId);
+            const position = positions.find((p) => p.instId === instId && parseFloat(p.pos) !== 0);
+
+            if (!position) {
+                console.log('没有持仓需要平仓');
+                return null;
+            }
+
+            console.log(`平仓: ${instId}, posSide=${position.posSide}, mgnMode=${position.mgnMode}`);
+
+            return await this.client.closePositionAPI({
+                instId: instId,
+                posSide: position.posSide || 'net',
+                mgnMode: position.mgnMode || 'cross'
             });
         } catch (error) {
             console.error('平仓失败:', error.message);

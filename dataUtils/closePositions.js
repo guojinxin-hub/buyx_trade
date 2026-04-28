@@ -281,7 +281,7 @@ export const executeOKXClosePositions = async ({tradeData, userOptions}) => {
                 console.log(`执行平仓操作: ${symbol}`);
                 
                 // 执行平仓操作
-                const result = await retryRequest(() => trader.closePosition(`${symbol}-USDT-SWAP`));
+                const result = await retryRequest(() => trader.closePositionAPI(`${symbol}-USDT-SWAP`));
                 console.log(`平仓结果: ${symbol}`, result);
                 
              
