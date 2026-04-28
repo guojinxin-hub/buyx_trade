@@ -122,8 +122,8 @@ export const getOKXPositions = async (userOptions) => {
                 const entryPrice = parseFloat(position.avgPx) || 0;
                 const markPrice = parseFloat(position.markPx) || 0;
                 const leverage = parseFloat(position.lever) || 1;
-                const unrealizedPnl = parseFloat(position.unrealizedPnl) || 0; // 实际盈亏
-                const positionInitialMargin = parseFloat(position.mgn) || 0; // 仓位保证金
+                const unrealizedPnl = parseFloat(position.upl) || 0;
+                const positionInitialMargin = parseFloat(position.margin) || 0;
 
                 let profitPercentage = 0;
 
