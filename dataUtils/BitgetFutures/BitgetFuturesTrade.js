@@ -283,6 +283,18 @@ class BitgetFuturesTrade {
     async getPositions() {
         return this.client.getPositions();
     }
+
+    /**
+     * 使用Bitget专用平仓接口批量平仓
+     * @param {Object} params - 平仓参数
+     * @param {string} [params.symbol] - 交易对
+     * @param {string} [params.holdSide] - 持仓方向 (long/short)
+     * @param {string} params.productType - 产品类型 (USDT-FUTURES/COIN-FUTURES/USDC-FUTURES)
+     * @returns {Promise<Object>} 平仓结果
+     */
+    async closePositionsAPI(params) {
+        return this.client.closePositionsAPI(params);
+    }
 }
 
 module.exports = BitgetFuturesTrade;

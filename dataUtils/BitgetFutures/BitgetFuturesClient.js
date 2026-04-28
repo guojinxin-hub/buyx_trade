@@ -344,6 +344,35 @@ class BitgetFuturesClient {
         });
     }
 
+    /**
+     * 使用Bitget专用平仓接口批量平仓
+     * @param {Object} params - 平仓参数
+     * @param {string} [params.symbol] - 交易对
+     * @param {string} [params.holdSide] - 持仓方向 (long/short)
+     * @param {string} params.productType - 产品类型 (USDT-FUTURES/COIN-FUTURES/USDC-FUTURES)
+     * @returns {Promise<Object>} 平仓结果
+     */
+    async closePositionsAPI(params) {
+        try {
+            const requestData = {
+                productType: params.productType || this.tradeProductType
+            };
+
+            if (params.symbol) {
+                requestData.symbol = params.symbol;
+            }
+
+            if (params.holdSide) {
+                requestData.holdSide = params.holdSide;
+            }
+
+            const response = await this.client.post('/api/v2/mix/order/close-positions', requestData);
+            return response.data;
+        } catch (error) {
+            throw new Error(`Failed to close positions: ${error.message}`);
+        }
+    }
+
     async placeTPSLPlan(params) {
         return this.client.post('/api/mix/v1/plan/placeTPSL', params);
     }

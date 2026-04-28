@@ -355,10 +355,14 @@ export const executeBitgetClosePositions = async ({tradeData, userOptions}) => {
                 if (position && position.total !== 0) {
                     console.log(`执行平仓操作: ${symbol}, 持仓大小: ${position.total}, 方向: ${position.holdSide}`);
                     
-                    // 执行平仓操作
-                    const result = await retryRequest(() => trader.client.closePosition(symbol, position.holdSide, position.total));
+                    // 执行平仓操作（使用Bitget专用平仓接口）
+                    const result = await retryRequest(() => trader.closePositionsAPI({
+                        symbol: symbol,
+                        holdSide: position.holdSide,
+                        productType: 'USDT-FUTURES'
+                    }));
                     console.log(`平仓结果: ${symbol}`, result);
-                    
+
                     await new Promise(resolve => setTimeout(resolve, 300));
                 }
             } catch (e) {
