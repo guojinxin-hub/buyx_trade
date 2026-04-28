@@ -267,6 +267,49 @@ console.log("params.attachAlgoOrds2",params.attachAlgoOrds)
     }
 
     /**
+     * 使用专门的平仓接口平仓
+     * @param {Object} params - 平仓参数
+     * @param {string} params.instId - 产品ID
+     * @param {string} [params.posSide] - 持仓方向 (long/short/net)
+     * @param {string} params.mgnMode - 保证金模式 (cross/isolated)
+     * @param {string} [params.ccy] - 保证金币种（合约模式下的全仓币币杠杆平仓必填）
+     * @param {boolean} [params.autoCxl] - 当市价全平时，平仓单是否需要自动撤销
+     * @param {string} [params.clOrdId] - 客户自定义ID
+     * @param {string} [params.tag] - 订单标签
+     * @returns {Promise<Object>} 平仓结果
+     */
+    async closePositionAPI(params) {
+        try {
+            const orderData = {
+                instId: params.instId,
+                mgnMode: params.mgnMode || 'cross',
+                autoCxl: params.autoCxl || false
+            };
+
+            if (params.posSide) {
+                orderData.posSide = params.posSide;
+            }
+
+            if (params.ccy) {
+                orderData.ccy = params.ccy;
+            }
+
+            if (params.clOrdId) {
+                orderData.clOrdId = params.clOrdId;
+            }
+
+            if (params.tag) {
+                orderData.tag = params.tag;
+            }
+
+            const response = await this.client.post('/api/v5/trade/close-position', orderData);
+            return response.data[0];
+        } catch (error) {
+            throw new Error(`Failed to close position via API: ${error.message}`);
+        }
+    }
+
+    /**
      * 获取持仓信息
      * @param {string} [instId] - 产品ID，不传则获取所有持仓
      * @returns {Promise<Array>} 持仓列表
