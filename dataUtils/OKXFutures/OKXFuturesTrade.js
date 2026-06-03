@@ -211,6 +211,18 @@ class OKXFuturesTrader {
     }
 
     /**
+     * 获取所有持仓
+     */
+    async getPositions(instId = '') {
+        try {
+            return await this.client.getPositions(instId);
+        } catch (error) {
+            console.error('获取持仓失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
      * 获取当前持仓
      */
     async getCurrentPosition(instId) {
