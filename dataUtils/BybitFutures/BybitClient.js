@@ -295,13 +295,19 @@ class BybitClient {
             }
             const response = await this.client.get('/v5/account/wallet-balance', { params });
 
-            const balances = response.result.list[0].coin || [];
+            const accountData = response.result.list[0];
+            const balances = accountData.coin || [];
             const usdtBalance = balances.find(b => b.coin === 'USDT');
 
+            const totalMarginBalance = parseFloat(accountData.totalMarginBalance || 0);
+            const unrealisedPnl = parseFloat(accountData.totalPerpUPL || usdtBalance?.unrealisedPnl || 0);
+            const walletBalance = parseFloat(accountData.totalWalletBalance || 0);
+            
             return {
-                total: parseFloat(usdtBalance?.equity || 0),
-                unrealisedPnl: parseFloat(usdtBalance?.unrealisedPnl || 0),
-                available: parseFloat(usdtBalance?.equity || 0) - parseFloat(usdtBalance?.totalPositionIM || 0),
+                total: totalMarginBalance,
+                unrealisedPnl: unrealisedPnl,
+                available: parseFloat(accountData.totalAvailableBalance || 0),
+                walletBalance: walletBalance,
             };
         } catch (error) {
             throw new Error(`Failed to get account balance: ${error.message}`);

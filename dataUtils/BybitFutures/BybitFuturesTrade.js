@@ -333,6 +333,10 @@ class BybitFuturesTrader {
                             stopLoss: stopLossPrice.toString()
                         });
                         console.log('开仓结果:', order);
+                        return {
+                            success: true,
+                            order: order
+                        };
                     }
                 }
                 // 同向持仓：盈利加仓
@@ -350,6 +354,10 @@ class BybitFuturesTrader {
                             stopLoss: stopLossPrice.toString()
                         });
                         console.log('加仓结果:', order);
+                        return {
+                            success: true,
+                            order: order
+                        };
                     } else {
                         console.log('持仓亏损，不加仓');
                     }
@@ -367,11 +375,16 @@ class BybitFuturesTrader {
                         stopLoss: stopLossPrice.toString()
                     });
                     console.log('开仓结果:', order);
+                    return {
+                        success: true,
+                        order: order
+                    };
                 }
             }
 
             return {
                 success: true,
+                order: null
             };
         } catch (error) {
             console.error('交易执行失败:', error.message);
