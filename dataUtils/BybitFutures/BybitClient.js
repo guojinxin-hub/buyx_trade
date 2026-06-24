@@ -139,12 +139,26 @@ class BybitClient {
      */
     async getAllInstruments() {
         try {
-            const response = await this.client.get('/v5/market/instruments-info', {
-                params: {
-                    category: 'linear'
-                }
-            });
-            return response.result.list || [];
+            const allInstruments = [];
+            let cursor = '';
+            const limit = 1000;
+
+            do {
+                const response = await this.client.get('/v5/market/instruments-info', {
+                    params: {
+                        category: 'linear',
+                        limit: limit,
+                        cursor: cursor
+                    }
+                });
+
+                const list = response.result.list || [];
+                allInstruments.push(...list);
+                
+                cursor = response.result.nextPageCursor || '';
+            } while (cursor);
+
+            return allInstruments;
         } catch (error) {
             throw new Error(`Failed to get instruments: ${error.message}`);
         }

@@ -2,7 +2,7 @@ import { intersectionWith, isEmpty } from "lodash";
 import BybitFuturesTrader from "./BybitFutures/BybitFuturesTrade";
 import { saveUserBalance } from "./saveUserBalance";
 import { saveTradeRecord } from "./saveTradeRecord";
-import {decrypt} from "./utils";
+import { decrypt } from "./utils";
 
 /**
  * Bybit 交易执行函数
@@ -41,6 +41,7 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
         // 匹配交易对信息
         for (const tradeItem of filterTradeDate) {
             const symbolInfo = symbols.find(s => s.symbol === `${tradeItem.symbol}USDT`);
+
             if (symbolInfo) {
                 futureContractData.push({
                     ...tradeItem,
@@ -55,10 +56,9 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
             // 获取用户的账户余额
             const accountBalance = await trader.getAccountInfo();
             await new Promise(resolve => setTimeout(resolve, 100));
+
             await saveUserBalance(userOptions.userId, accountBalance.balance);
-
             await trader.setPositionMode(0);
-
             // 执行每个交易对的交易
             for (const item of futureContractData) {
                 const result = await trader.executeTrade({

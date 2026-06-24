@@ -34,14 +34,14 @@ export const testAPI = async (req, res) => {
             isActive: true,
             isDelete: false,
             belong: "Bybit",
-            userId: new ObjectId("66440d6e8ddd8b3685baaf4b")
+            userId: new ObjectId("674136979736309d67fd1e3c")
         }).lean()
         console.log("options", options)
 
         // 步骤2: 遍历每个交易配置并执行交易
         for (const option of options) {
             if (!isEmpty(option)) {
-                await apiTrade({userOptions: option, tradeData: [{symbol: 'ETH', direction: 'sell'}]})
+                await apiTrade({userOptions: option, tradeData: [{symbol: 'XRP', direction: 'buy'}]})
             }
         }
 
