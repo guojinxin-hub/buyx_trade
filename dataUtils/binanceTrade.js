@@ -54,7 +54,7 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
                     takeProfitPercent: Number(takeProfit), // 止盈
                     stopLossPercent: Number(stopLoss),// 止损
                     symbolInfo: item.symbolInfo,
-                    settingDirection: direction,
+                    settingDirection: direction === "buy" ? 'LONG' : "SHORT",
                 });
                 console.log('Binance 交易结果:', result);
 
