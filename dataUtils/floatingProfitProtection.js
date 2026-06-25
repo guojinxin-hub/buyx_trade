@@ -419,7 +419,7 @@ async function handleUserFloatingProfitProtection(userOption) {
                         // 计算总浮动收益率
                         total = parseFloat(accountInfo.balance.total) || 0;
                         totalFloatingProfit = parseFloat(accountInfo.balance.unrealisedPnl) || 0;
-                        totalBenchmark = total - totalFloatingProfit;
+                        totalBenchmark = total;
                         availableBalance = parseFloat(accountInfo.balance.available) || 0;
                         totalFloatingProfitRate = totalBenchmark > 0 ? (totalFloatingProfit / totalBenchmark) * 100 : 0;
                     }
