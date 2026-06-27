@@ -59,8 +59,29 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
 
             await saveUserBalance(userOptions.userId, accountBalance.balance);
             await trader.setPositionMode(0);
+            
+            // 获取当前持仓并构建映射 {symbol: direction}
+            const positions = await trader.getPositions();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const positionMap = {};
+            if (positions && Array.isArray(positions)) {
+                for (const pos of positions) {
+                    const posAmt = parseFloat(pos.pos);
+                    if (Math.abs(posAmt) > 0) {
+                        const sym = (pos.instId || '').replace('USDT', '');
+                        positionMap[sym] = pos.side === 'Buy' ? 'buy' : 'sell';
+                    }
+                }
+            }
+            
             // 执行每个交易对的交易
             for (const item of futureContractData) {
+                // 检查同方向是否已有持仓，有则跳过不加仓
+                if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
+                    console.log(`Bybit ${item.symbol} 同方向已有持仓，跳过加仓`);
+                    continue;
+                }
+                
                 const result = await trader.executeTrade({
                     symbol: `${item.symbol}USDT`,
                     usdtAmount: Number(maxVolume),

@@ -44,7 +44,28 @@ export const okxTrade = async ({tradeData, userOptions}) => {
             if (positionMode.posMode !== 'net_mode') {
                 await trader.setPositionMode()
             }
+            
+            // 获取当前持仓并构建映射 {symbol: direction}
+            const positions = await trader.getPositions()
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const positionMap = {};
+            if (positions && Array.isArray(positions)) {
+                for (const pos of positions) {
+                    const posAmt = parseFloat(pos.pos);
+                    if (posAmt !== 0) {
+                        const sym = pos.instId.replace('-USDT-SWAP', '');
+                        positionMap[sym] = posAmt > 0 ? 'buy' : 'sell';
+                    }
+                }
+            }
+            
             for (const item of futureContractData) {
+                // 检查同方向是否已有持仓，有则跳过不加仓
+                if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
+                    console.log(`OKX ${item.symbol} 同方向已有持仓，跳过加仓`);
+                    continue;
+                }
+                
                 // 执行交易
                 const result = await trader.executeTrade({
                     instId: `${item.symbol}-USDT-SWAP`, // 交易对

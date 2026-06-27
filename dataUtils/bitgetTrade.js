@@ -68,7 +68,26 @@ export const bitgetTrade = async ({tradeData, userOptions}) => {
             console.log("accountBalance",accountBalance)
             await saveUserBalance(userOptions.userId, accountBalance.balance);
 
+            // 获取当前持仓并构建映射 {symbol: direction}
+            const positions = await trader.getPositions();
+            const positionMap = {};
+            if (positions && Array.isArray(positions)) {
+                for (const pos of positions) {
+                    const total = Number(pos.total || 0);
+                    if (Math.abs(total) > 0) {
+                        const sym = (pos.symbol || '').replace('USDT_UMCBL', '');
+                        positionMap[sym] = pos.holdSide === 'long' ? 'buy' : 'sell';
+                    }
+                }
+            }
+
             for (const item of futureContractData) {
+                // 检查同方向是否已有持仓，有则跳过不加仓
+                if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
+                    console.log(`Bitget ${item.symbol} 同方向已有持仓，跳过加仓`);
+                    continue;
+                }
+                
                 const result = await trader.executeTrade({
                     symbol: `${item.symbol}`,
                     usdtAmount: Number(maxVolume),
@@ -208,8 +227,27 @@ export const bitgetLeaderTrade = async ({tradeData, userOptions}) => {
             // 获取用户配置的交易参数
             const {direction, maxVolume, leverage, stopLoss, takeProfit} = userOptions;
 
+            // 获取当前持仓并构建映射 {symbol: direction}
+            const positions = await trader.getPositions();
+            const positionMap = {};
+            if (positions && Array.isArray(positions)) {
+                for (const pos of positions) {
+                    const total = Number(pos.total || 0);
+                    if (Math.abs(total) > 0) {
+                        const sym = (pos.symbol || '').replace('USDT_UMCBL', '');
+                        positionMap[sym] = pos.holdSide === 'long' ? 'buy' : 'sell';
+                    }
+                }
+            }
+
             // 遍历每个交易项并执行交易
             for (const item of filterTradeData) {
+                // 检查同方向是否已有持仓，有则跳过不加仓
+                if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
+                    console.log(`Bitget带单 ${item.symbol} 同方向已有持仓，跳过加仓`);
+                    continue;
+                }
+                
                 // 调用executeTrade方法执行带单交易
                 // 参数说明:
                 // - symbol: 交易对符号 (如: ETH)

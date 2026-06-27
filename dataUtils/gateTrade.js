@@ -193,11 +193,9 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                         // 3. 反手开新仓
                         await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
                     } 
-                    // 逻辑 C: 持仓方向与信号一致 -> 只有盈利时才加仓
+                    // 逻辑 C: 持仓方向与信号一致 -> 不加仓，直接跳过
                     else if (position && ((Number(position.body.size) > 0 && direction === "buy") || (Number(position.body.size) < 0 && direction === "sell"))) {
-                        if (Number(position.body.unrealisedPnl) > 0) {
-                            await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
-                        }
+                        console.log(`Gate ${symbol} 同方向已有持仓，跳过加仓`)
                     }
                     await new Promise(resolve => setTimeout(resolve, 200));
                 } catch (e) {

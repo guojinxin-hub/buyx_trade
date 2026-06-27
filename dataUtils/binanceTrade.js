@@ -42,7 +42,26 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
                 available: availableBalance
             }
             await saveUserBalance(userOptions.userId, accountFunds)
+            
+            // 构建当前持仓映射 {symbol: direction}
+            const positionMap = {};
+            if (accountInfo.positions) {
+                for (const pos of accountInfo.positions) {
+                    const posAmt = parseFloat(pos.positionAmt);
+                    if (posAmt !== 0) {
+                        const sym = pos.symbol.replace('USDT', '');
+                        positionMap[sym] = posAmt > 0 ? 'buy' : 'sell';
+                    }
+                }
+            }
+            
             for (const item of futureContractData) {
+                // 检查同方向是否已有持仓，有则跳过不加仓
+                if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
+                    console.log(`Binance ${item.symbol} 同方向已有持仓，跳过加仓`);
+                    continue;
+                }
+                
                 // 执行交易
                 console.log("Binance 开始执行交易: ", userOptions.userId)
                 const result = await trader.executeTrade({
