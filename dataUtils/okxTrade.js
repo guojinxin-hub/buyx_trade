@@ -170,7 +170,8 @@ export const getOKXPositions = async (userOptions) => {
                     currentPrice: position.last,
                     size: posAmt,
                     exchange: 'okx',
-                    unrealisedPnl: profitPercentage // 返回计算后的收益率百分比
+                    unrealisedPnl: profitPercentage,
+                    absolutePnl: parseFloat(position.upl) || 0
                 });
             }
         }

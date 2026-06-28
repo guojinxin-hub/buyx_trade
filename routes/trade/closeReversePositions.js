@@ -11,9 +11,10 @@ import { getUserPositions } from "../../dataUtils/apiTrade";
  * 根据推荐方向，平掉反向的盈利单
  * 
  * 业务逻辑：
- * 1. 如果推荐的是空信号 (sell)，检查持仓内是否有多单盈利，先平仓盈利多单后，再入场空单
- * 2. 如果推荐的是多信号 (buy)，检查持仓内是否有空单盈利，先平仓盈利空单后，再入场多单
- * 3. 每次推荐都触发此逻辑，而且是优先触发
+ * 1. 先判断账户整体是否盈利，如果未盈利则不平仓
+ * 2. 如果推荐的是空信号 (sell)，检查持仓内是否有多单盈利，先平仓盈利多单后，再入场空单
+ * 3. 如果推荐的是多信号 (buy)，检查持仓内是否有空单盈利，先平仓盈利空单后，再入场多单
+ * 4. 每次推荐都触发此逻辑，而且是优先触发
  * 
  * 推荐方向从数据库获取（LAST_RECOMMEND_DIRECTION）
  */
@@ -55,6 +56,30 @@ export const closeReversePositions = async (req, res) => {
                 // 获取用户当前持仓信息
                 const userPositions = await getUserPositions(option);
                 console.log(`用户 ${option.userId} 当前持仓数量：${userPositions.length}`);
+
+                // 筛选有持仓的单子
+                const positionsWithSize = userPositions.filter(pos => {
+                    const size = parseFloat(pos.size) || 0;
+                    return size !== 0;
+                });
+
+                if (isEmpty(positionsWithSize)) {
+                    console.log(`用户 ${option.userId} 没有持仓`);
+                    continue;
+                }
+
+                // 计算账户整体盈亏（所有持仓的绝对盈亏之和）
+                const totalAbsolutePnl = positionsWithSize.reduce((sum, pos) => {
+                    return sum + (parseFloat(pos.absolutePnl) || 0);
+                }, 0);
+
+                console.log(`用户 ${option.userId} 账户整体盈亏：${totalAbsolutePnl.toFixed(2)} USDT`);
+
+                // 如果账户整体盈利小于等于10美金，则不平仓
+                if (totalAbsolutePnl <= 10) {
+                    console.log(`用户 ${option.userId} 账户整体盈利不足10美金（${totalAbsolutePnl.toFixed(2)} USDT），不平仓`);
+                    continue;
+                }
 
                 // 筛选反向方向的持仓
                 const reversePositions = userPositions.filter(pos => {

@@ -163,7 +163,8 @@ export const getBitgetPositions = async (userOptions) => {
                     currentPrice: position.markPrice,
                     size: Number(position.total || 0),
                     exchange: 'bitget',
-                    unrealisedPnl: profitPercentage
+                    unrealisedPnl: profitPercentage,
+                    absolutePnl: Number(position.unrealizedPL || 0)
                 };
             });
     } catch (error) {

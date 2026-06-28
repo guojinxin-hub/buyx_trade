@@ -8,12 +8,14 @@ import { getUserPositions } from "../../dataUtils/apiTrade";
 
 /**
  * 全部平仓接口
- * 平掉用户所有持仓（包括盈利单和亏损单）
+ * 判断用户账户整体是否盈利，如果盈利则平仓所有单子，否则不平仓
  * 
  * 业务逻辑：
  * 1. 获取所有用户的持仓
- * 2. 平掉所有持仓（不区分盈利或亏损）
- * 3. 更新交易记录状态为 closed
+ * 2. 计算用户账户整体盈亏（所有持仓的未实现盈亏之和）
+ * 3. 如果整体盈利（总盈亏 > 0），则平仓所有持仓
+ * 4. 如果整体亏损或持平（总盈亏 <= 0），则不平仓
+ * 5. 更新交易记录状态为 closed
  */
 export const closeAllPositions = async (req, res) => {
     try {
@@ -41,22 +43,34 @@ export const closeAllPositions = async (req, res) => {
                 const userPositions = await getUserPositions(option);
                 console.log(`用户 ${option.userId} 当前持仓数量：${userPositions.length}`);
 
-                // 筛选所有持仓（包括盈利和亏损）
-                const allPositions = userPositions.filter(pos => {
-                    // 判断是否有持仓
+                // 筛选有持仓的单子
+                const positionsWithSize = userPositions.filter(pos => {
                     const size = parseFloat(pos.size) || 0;
                     return size !== 0;
                 });
 
-                const tradeData = allPositions.map(pos => ({ symbol: pos.symbol }));
-
-                console.log(`用户 ${option.userId} 的所有持仓：`, allPositions);
-                console.log(`为用户 ${option.userId} 筛选出的平仓交易对：`, tradeData);
-
-                if (isEmpty(tradeData)) {
-                    console.log(`用户 ${option.userId} 没有需要平仓的持仓`);
+                if (isEmpty(positionsWithSize)) {
+                    console.log(`用户 ${option.userId} 没有持仓`);
                     continue;
                 }
+
+                // 计算账户整体盈亏（所有持仓的绝对盈亏之和）
+                const totalAbsolutePnl = positionsWithSize.reduce((sum, pos) => {
+                    return sum + (parseFloat(pos.absolutePnl) || 0);
+                }, 0);
+
+                console.log(`用户 ${option.userId} 账户整体盈亏：${totalAbsolutePnl.toFixed(2)} USDT`);
+
+                // 如果账户整体盈利小于等于10美金，则不平仓
+                if (totalAbsolutePnl <= 10) {
+                    console.log(`用户 ${option.userId} 账户整体盈利不足10美金（${totalAbsolutePnl.toFixed(2)} USDT），不平仓`);
+                    continue;
+                }
+
+                // 如果账户整体盈利大于10美金，则平仓所有持仓
+                const tradeData = positionsWithSize.map(pos => ({ symbol: pos.symbol }));
+                console.log(`用户 ${option.userId} 账户整体盈利超过10美金（${totalAbsolutePnl.toFixed(2)} USDT），执行全部平仓`);
+                console.log(`为用户 ${option.userId} 筛选出的平仓交易对：`, tradeData);
 
                 // 执行平仓操作
                 await executeClosePositions({ tradeData, userOptions: option });
@@ -75,7 +89,7 @@ export const closeAllPositions = async (req, res) => {
                     // 为每个交易记录计算收益率并更新
                     for (const record of tradeRecords) {
                         // 找到对应的持仓信息以获取平仓价格
-                        const position = allPositions.find(pos => pos.symbol === symbol);
+                        const position = positionsWithSize.find(pos => pos.symbol === symbol);
                         if (position) {
                             const entryPrice = parseFloat(record.price) || 0;
                             const closePrice = parseFloat(position.currentPrice) || 0;

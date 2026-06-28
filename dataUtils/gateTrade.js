@@ -385,7 +385,8 @@ export const getGatePositions = async (userOptions) => {
                     currentPrice: position.markPrice,
                     size: Math.abs(position.size),
                     exchange: 'gate',
-                    unrealisedPnl: profitPercentage, // 返回计算后的收益率百分比
+                    unrealisedPnl: profitPercentage,
+                    absolutePnl: parseFloat(position.unrealisedProfit) || 0,
                     leverage: position.leverage
                 };
             });

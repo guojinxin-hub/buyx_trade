@@ -163,7 +163,8 @@ export const getBybitPositions = async (userOptions) => {
                     currentPrice: markPrice,
                     size: Math.abs(parseFloat(position.pos)),
                     exchange: 'bybit',
-                    unrealisedPnl: profitPercentage
+                    unrealisedPnl: profitPercentage,
+                    absolutePnl: parseFloat(position.upl) || 0
                 };
             });
     } catch (error) {

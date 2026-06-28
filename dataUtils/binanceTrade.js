@@ -272,7 +272,8 @@ export const getBinancePositions = async (userOptions) => {
                     currentPrice: currentPrice,
                     size: positionAmt,
                     exchange: 'binance',
-                    unrealisedPnl: profitPercentage // 返回计算后的收益率百分比
+                    unrealisedPnl: profitPercentage,
+                    absolutePnl: parseFloat(position.unrealizedProfit) || 0
                 });
             }
         }
