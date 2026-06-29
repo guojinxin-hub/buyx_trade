@@ -1,4 +1,5 @@
 import {UserTradeOptionsModel} from "buydip_scheme/scheme/userTradeOptions";
+import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
 import {isEmpty, orderBy} from "lodash";
 import {FundFlowModel, OverallRecModel} from "buydip_scheme";
 import moment from "moment";
@@ -40,7 +41,19 @@ export const postRecommendData = async (req, res) => {
             }).lean()
             for (const option of options) {
                 if (!isEmpty(option)) {
-                    await apiTrade({userOptions: option, tradeData: sortedArray})
+                    const tradedSymbols = await TradeRecordModel.find({
+                        userId: option._id,
+                        createdAt: {$gte: moment().startOf('day').toDate()},
+                    }).distinct('symbol');
+                    
+                    const filteredArray = sortedArray.filter(item => !tradedSymbols.includes(item.symbol));
+                    console.log(`用户 ${option.userId} 今日已交易币种: ${tradedSymbols.join(', ') || '无'}，过滤后待交易: ${filteredArray.length}个`);
+                    
+                    if (!isEmpty(filteredArray)) {
+                        await apiTrade({userOptions: option, tradeData: filteredArray})
+                    } else {
+                        console.log(`用户 ${option.userId} 今日已完成所有推荐币种的交易，跳过`);
+                    }
                 }
             }
         }
