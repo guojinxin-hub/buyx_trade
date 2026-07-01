@@ -58,7 +58,7 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
             await new Promise(resolve => setTimeout(resolve, 100));
 
             await saveUserBalance(userOptions.userId, accountBalance.balance);
-            await trader.setPositionMode(0);
+            await trader.setPositionMode(3); // 设置双向持仓
             
             // 获取当前持仓并构建映射 {symbol: direction}
             const positions = await trader.getPositions();

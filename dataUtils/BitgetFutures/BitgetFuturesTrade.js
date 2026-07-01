@@ -183,30 +183,24 @@ class BitgetFuturesTrade {
             settingDirection
         } = params;
         try {
-            console.log("11111111111")
+            // 设置双向持仓
             try {
-                await this.client.setPositionMode();
+                await this.client.setPositionMode('hedge_mode');
                 await new Promise((r) => setTimeout(r, 100));
             } catch (modeError) {
                 console.warn('切换持仓模式失败，继续使用当前模式:', modeError.message);
-                // 不抛出错误，继续执行交易
             }
-            console.log("2222222222")
 
             await this.checkMargin(usdtAmount, minMargin);
-            console.log("3333333333")
 
             await new Promise((r) => setTimeout(r, 100));
             await this.client.setLeverage(symbol, leverage);
-            console.log("44444444444")
 
             await new Promise((r) => setTimeout(r, 100));
 
             const ticker = await this.client.getTicker(symbol);
-            console.log("55555555")
             console.log("ticker", ticker)
             const currentPrice = this._getTickerLastPrice(ticker);
-            console.log("666666666666")
             console.log(symbolInfo,
                 currentPrice,
                 usdtAmount,
@@ -217,10 +211,8 @@ class BitgetFuturesTrade {
                 usdtAmount,
                 leverage
             });
-            console.log("7777777777777", size)
             const currentPosition = await this.getCurrentPosition(symbol);
             console.log("currentPosition", currentPosition)
-            console.log("88888888888888")
 
             if (currentPosition) {
                 const isOpposite = (currentPosition.holdSide === 'long' && direction === 'sell')

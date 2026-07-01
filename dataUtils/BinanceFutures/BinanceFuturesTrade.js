@@ -218,10 +218,10 @@ class BinanceFuturesTrader {
             // 获取当前持仓模式
             const currentMode = await retryRequest(() => this.client.getPositionMode());
             console.log('当前持仓模式:', currentMode);
-            if (currentMode.dualSidePosition) {
-                // 设置为单向持仓模式
-                const result = await retryRequest(() => this.client.setPositionMode(false));
-                console.log('设置单向持仓模式成功:', result);
+            if (!currentMode.dualSidePosition) {
+                // 设置为双向持仓模式
+                const result = await retryRequest(() => this.client.setPositionMode(true));
+                console.log('设置双向持仓模式成功:', result);
                 // 验证设置
                 const newMode = await retryRequest(() => this.client.getPositionMode());
                 console.log('新的持仓模式:', newMode);
@@ -255,7 +255,7 @@ class BinanceFuturesTrader {
             }
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            // 设置单向持仓
+            // 设置双向持仓
             await this.setupDualPositionMode()
             await new Promise(resolve => setTimeout(resolve, 50));
 

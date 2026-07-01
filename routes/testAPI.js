@@ -33,7 +33,7 @@ export const testAPI = async (req, res) => {
         const options = await UserTradeOptionsModel.find({
             isActive: true,
             isDelete: false,
-            belong: "Bybit",
+            belong: "Binance",
             userId: new ObjectId("674136979736309d67fd1e3c")
         }).lean()
         console.log("options", options)
@@ -41,7 +41,7 @@ export const testAPI = async (req, res) => {
         // 步骤2: 遍历每个交易配置并执行交易
         for (const option of options) {
             if (!isEmpty(option)) {
-                await apiTrade({userOptions: option, tradeData: [{symbol: 'ICP', direction: 'sell'}]})
+                await apiTrade({userOptions: option, tradeData: [{symbol: 'DOGE', direction: 'buy'}]})
             }
         }
 
