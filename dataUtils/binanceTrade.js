@@ -1,17 +1,21 @@
 import BinanceFuturesTrade from "./BinanceFutures/BinanceFuturesTrade";
-import {decrypt} from "./utils";
-import {intersectionWith, isEmpty} from "lodash";
-import {saveUserBalance} from "./saveUserBalance";
-import {saveTradeRecord} from "./saveTradeRecord";
-import {formatPrice} from "./formatPrice";
-import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
+import { decrypt } from "./utils";
+import { intersectionWith, isEmpty } from "lodash";
+import { saveUserBalance } from "./saveUserBalance";
+import { saveTradeRecord } from "./saveTradeRecord";
+import { formatPrice } from "./formatPrice";
+import { TradeRecordModel } from "buydip_scheme/scheme/tradeRecord";
 import moment from "moment";
 
-export const binanceTrade = async ({tradeData, userOptions}) => {
+const toBinanceDirection = (dir) => {
+    return dir === 'buy' ? 'LONG' : (dir === 'sell' ? 'SHORT' : dir);
+};
+
+export const binanceTrade = async ({ tradeData, userOptions }) => {
     try {
         console.log(moment().format('YYYY-MM-DD HH:mm:ss'), 'Binance 开始执行交易: ')
         // 首先获取到当前可支持的币种信息
-        const {apiKey, apiSecret, isTestOption, currency, isActive} = userOptions
+        const { apiKey, apiSecret, isTestOption, currency, isActive } = userOptions
         const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
         // 获取所有币种信息
         let futureContractData = []
@@ -31,18 +35,18 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
                 })
             }
         }
-        console.log(moment().format('YYYY-MM-DD HH:mm:ss'), 'Binance 交易币种: ',futureContractData )
+        console.log(moment().format('YYYY-MM-DD HH:mm:ss'), 'Binance 交易币种: ', futureContractData)
         if (isActive) {
-            const {direction, insurance, maxVolume, leverage, stopLoss, takeProfit} = userOptions
+            const { direction, insurance, maxVolume, leverage, stopLoss, takeProfit } = userOptions
             const accountInfo = await trader.checkUserAccount();
-            const {availableBalance, totalUnrealizedProfit, totalWalletBalance} = accountInfo
+            const { availableBalance, totalUnrealizedProfit, totalWalletBalance } = accountInfo
             const accountFunds = {
                 total: totalWalletBalance,
                 unrealisedPnl: totalUnrealizedProfit,
                 available: availableBalance
             }
             await saveUserBalance(userOptions.userId, accountFunds)
-            
+
             // 构建当前持仓映射 {symbol: direction}
             const positionMap = {};
             if (accountInfo.positions) {
@@ -54,26 +58,26 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
                     }
                 }
             }
-            
+
             for (const item of futureContractData) {
                 // 检查同方向是否已有持仓，有则跳过不加仓
                 if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
                     console.log(`Binance ${item.symbol} 同方向已有持仓，跳过加仓`);
                     continue;
                 }
-                
+
                 // 执行交易
                 console.log("Binance 开始执行交易: ", userOptions.userId)
                 const result = await trader.executeTrade({
                     symbol: `${item.symbol}USDT`,
                     usdtAmount: Number(maxVolume),
-                    direction: item.direction === "buy" ? 'LONG' : "SHORT",
+                    direction: toBinanceDirection(item.direction),
                     leverage: Number(leverage),
                     minMargin: Number(insurance),
                     takeProfitPercent: Number(takeProfit), // 止盈
                     stopLossPercent: Number(stopLoss),// 止损
                     symbolInfo: item.symbolInfo,
-                    settingDirection: direction === "buy" ? 'LONG' : "SHORT",
+                    settingDirection: direction === 'all' ? 'all' : toBinanceDirection(direction),
                 });
                 console.log('Binance 交易结果:', result);
 
@@ -106,10 +110,10 @@ export const binanceTrade = async ({tradeData, userOptions}) => {
 
 export const updateProtectionStopLoss = async (req, res) => {
     try {
-        const {userOptions, symbol, direction, protectionPrice} = req.body;
+        const { userOptions, symbol, direction, protectionPrice } = req.body;
 
         // 1. 初始化 API 客户端
-        const {apiKey, apiSecret, isTestOption} = userOptions
+        const { apiKey, apiSecret, isTestOption } = userOptions
 
         const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
 
@@ -118,7 +122,7 @@ export const updateProtectionStopLoss = async (req, res) => {
         const symbolInfo = symbols.find(s => s.symbol === `${symbol}USDT`);
 
         if (!symbolInfo) {
-            return res.status(400).json({success: false, message: '合约不存在'});
+            return res.status(400).json({ success: false, message: '合约不存在' });
         }
 
         // 3. 格式化保护止损价格
@@ -171,13 +175,13 @@ export const updateProtectionStopLoss = async (req, res) => {
             }
 
             console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);
-            return res.status(200).json({success: true, message: '保护止损单更新成功'});
+            return res.status(200).json({ success: true, message: '保护止损单更新成功' });
         }
 
-        return res.status(200).json({success: false, message: '保护止损价格无效'});
+        return res.status(200).json({ success: false, message: '保护止损价格无效' });
     } catch (e) {
         console.log("Binance更新保护止损单出错", e);
-        return res.status(500).json({success: false, message: '更新保护止损单出错', error: e.message});
+        return res.status(500).json({ success: false, message: '更新保护止损单出错', error: e.message });
     }
 }
 
@@ -205,7 +209,7 @@ const retryRequest = async (fn, retries = 3, delay = 2000) => {
 
 export const getBinancePositions = async (userOptions) => {
     try {
-        const {apiKey, apiSecret, isTestOption} = userOptions;
+        const { apiKey, apiSecret, isTestOption } = userOptions;
         const trader = new BinanceFuturesTrade(decrypt(apiKey), decrypt(apiSecret), isTestOption);
 
         // 使用重试机制获取账户信息
