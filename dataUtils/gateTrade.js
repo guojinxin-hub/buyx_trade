@@ -135,21 +135,21 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
             const futureAccount = await futuresApi.listFuturesAccounts(settle)
             await saveUserBalance(userOptions.userId, futureAccount.body)
             
-            // 5.2 检查并修改持仓模式（设置为双向持仓）
+            // 5.2 检查并修改持仓模式（设置为单向持仓）
             let inDualMode = futureAccount.body.inDualMode
-            if (!inDualMode) {
+            if (inDualMode) {
                 const positions = await futuresApi.listPositions(settle, {holding: true})
                 if (isEmpty(positions.body)) {
                     try {
-                        const dualModeResult = await futuresApi.setDualMode(settle, true)
+                        const dualModeResult = await futuresApi.setDualMode(settle, false)
                         inDualMode = dualModeResult.body.inDualMode
                     } catch (e) {
                         console.log("修改持仓模式失败", e)
                     }
                 }
             }
-            if (!inDualMode) {
-                console.log("持仓方向应该为双向持仓")
+            if (inDualMode) {
+                console.log("持仓方向应该为单向持仓")
             }
             
             // 5.3 匹配交易数据与合约数据

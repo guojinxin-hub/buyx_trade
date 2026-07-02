@@ -183,9 +183,9 @@ class BitgetFuturesTrade {
             settingDirection
         } = params;
         try {
-            // 设置双向持仓
+            // 设置单向持仓
             try {
-                await this.client.setPositionMode('hedge_mode');
+                await this.client.setPositionMode('one_way_mode');
                 await new Promise((r) => setTimeout(r, 100));
             } catch (modeError) {
                 console.warn('切换持仓模式失败，继续使用当前模式:', modeError.message);

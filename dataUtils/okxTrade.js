@@ -39,10 +39,10 @@ export const okxTrade = async ({tradeData, userOptions}) => {
             const accountBalance = await trader.getAccountInfo()
             await new Promise(resolve => setTimeout(resolve, 100));
             await saveUserBalance(userOptions.userId, accountBalance.balance)
-            // 修改持仓模式为双向持仓
+            // 修改持仓模式为单向持仓
             const positionMode = await trader.getPositionMode()
-            if (positionMode.posMode !== 'long_short_mode') {
-                await trader.setPositionMode('long_short_mode')
+            if (positionMode.posMode !== 'net_mode') {
+                await trader.setPositionMode('net_mode')
             }
             
             // 获取当前持仓并构建映射 {symbol: direction}
