@@ -1,6 +1,5 @@
 import { UserTradeOptionsModel } from "buydip_scheme/scheme/userTradeOptions";
 import { TradeRecordModel } from "buydip_scheme/scheme/tradeRecord";
-import { PageDataModel } from "buydip_scheme";
 import { isEmpty } from "lodash";
 import { formatResponse } from "../../dataUtils/formatResponse";
 import { executeClosePositions } from "../../dataUtils/closePositions";
@@ -8,14 +7,13 @@ import { getUserPositions } from "../../dataUtils/apiTrade";
 
 /**
  * 全部平仓接口
- * 判断用户账户整体是否盈利，如果盈利则平仓所有单子，否则不平仓
+ * 只平仓盈利的单子，保留亏损的单子
  * 
  * 业务逻辑：
  * 1. 获取所有用户的持仓
- * 2. 计算用户账户整体盈亏（所有持仓的未实现盈亏之和）
- * 3. 如果整体盈利（总盈亏 > 0），则平仓所有持仓
- * 4. 如果整体亏损或持平（总盈亏 <= 0），则不平仓
- * 5. 更新交易记录状态为 closed
+ * 2. 筛选出盈利的持仓
+ * 3. 只平仓盈利的持仓，保留亏损的持仓
+ * 4. 更新交易记录状态为 closed
  */
 export const closeAllPositions = async (req, res) => {
     try {
@@ -54,23 +52,39 @@ export const closeAllPositions = async (req, res) => {
                     continue;
                 }
 
-                // 计算账户整体盈亏（所有持仓的绝对盈亏之和）
-                const totalAbsolutePnl = positionsWithSize.reduce((sum, pos) => {
-                    return sum + (parseFloat(pos.absolutePnl) || 0);
-                }, 0);
+                // 筛选盈利单（只平仓盈利的单子，保留亏损的）
+                const profitablePositions = positionsWithSize.filter(pos => {
+                    let pnl = 0;
+                    
+                    if (pos.unrealisedPnl !== undefined) {
+                        pnl = parseFloat(pos.unrealisedPnl) || 0;
+                    } else {
+                        const entryPrice = parseFloat(pos.entryPrice) || 0;
+                        const currentPrice = parseFloat(pos.currentPrice) || 0;
+                        
+                        if (entryPrice > 0 && currentPrice > 0) {
+                            if (pos.direction === 'buy') {
+                                pnl = (currentPrice - entryPrice) * pos.size;
+                            } else {
+                                pnl = (entryPrice - currentPrice) * Math.abs(pos.size);
+                            }
+                        }
+                    }
+                    
+                    console.log(`检查持仓 ${pos.symbol} (${pos.direction}) 盈亏：unrealisedPnl=${pos.unrealisedPnl}, pnl=${pnl}`);
+                    
+                    return pnl > 0;
+                });
 
-                console.log(`用户 ${option.userId} 账户整体盈亏：${totalAbsolutePnl.toFixed(2)} USDT`);
+                const tradeData = profitablePositions.map(pos => ({ symbol: pos.symbol }));
 
-                // 如果账户整体盈利小于等于10美金，则不平仓
-                if (totalAbsolutePnl <= 10) {
-                    console.log(`用户 ${option.userId} 账户整体盈利不足10美金（${totalAbsolutePnl.toFixed(2)} USDT），不平仓`);
+                console.log(`用户 ${option.userId} 的盈利单持仓：`, profitablePositions);
+                console.log(`为用户 ${option.userId} 筛选出的平仓交易对：`, tradeData);
+
+                if (isEmpty(tradeData)) {
+                    console.log(`用户 ${option.userId} 没有需要平仓的盈利单`);
                     continue;
                 }
-
-                // 如果账户整体盈利大于10美金，则平仓所有持仓
-                const tradeData = positionsWithSize.map(pos => ({ symbol: pos.symbol }));
-                console.log(`用户 ${option.userId} 账户整体盈利超过10美金（${totalAbsolutePnl.toFixed(2)} USDT），执行全部平仓`);
-                console.log(`为用户 ${option.userId} 筛选出的平仓交易对：`, tradeData);
 
                 // 执行平仓操作
                 await executeClosePositions({ tradeData, userOptions: option });
@@ -88,8 +102,8 @@ export const closeAllPositions = async (req, res) => {
                     
                     // 为每个交易记录计算收益率并更新
                     for (const record of tradeRecords) {
-                        // 找到对应的持仓信息以获取平仓价格
-                        const position = positionsWithSize.find(pos => pos.symbol === symbol);
+                        // 找到对应的盈利持仓信息以获取平仓价格
+                        const position = profitablePositions.find(pos => pos.symbol === symbol);
                         if (position) {
                             const entryPrice = parseFloat(record.price) || 0;
                             const closePrice = parseFloat(position.currentPrice) || 0;
