@@ -42,30 +42,6 @@ export const closeReversePositions = async (req, res) => {
                 const userPositions = await getUserPositions(option);
                 console.log(`用户 ${option.userId} 当前持仓数量：${userPositions.length}`);
 
-                // 筛选有持仓的单子
-                const positionsWithSize = userPositions.filter(pos => {
-                    const size = parseFloat(pos.size) || 0;
-                    return size !== 0;
-                });
-
-                if (isEmpty(positionsWithSize)) {
-                    console.log(`用户 ${option.userId} 没有持仓`);
-                    continue;
-                }
-
-                // 计算账户整体盈亏（所有持仓的绝对盈亏之和）
-                const totalAbsolutePnl = positionsWithSize.reduce((sum, pos) => {
-                    return sum + (parseFloat(pos.absolutePnl) || 0);
-                }, 0);
-
-                console.log(`用户 ${option.userId} 账户整体盈亏：${totalAbsolutePnl.toFixed(2)} USDT`);
-
-                // 如果账户整体盈利小于等于10美金，则不平仓
-                if (totalAbsolutePnl <= 5) {
-                    console.log(`用户 ${option.userId} 账户整体盈利不足10美金（${totalAbsolutePnl.toFixed(2)} USDT），不平仓`);
-                    continue;
-                }
-
                 // 筛选所有盈利单（不再判断方向）
                 const profitablePositions = userPositions.filter(pos => {
                     // 计算盈亏
