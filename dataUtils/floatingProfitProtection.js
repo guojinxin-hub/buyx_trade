@@ -582,18 +582,18 @@ export const handleFloatingProfitProtection = async () => {
  */
 export const startFloatingProfitProtectionScheduler = async () => {
     // 先加载配置
-    // await loadConfig();
+    await loadConfig();
 
-    // logger.info(`启动浮动盈利保护定时任务，间隔: ${CONFIG.MONITORING_INTERVAL / 1000 / 60} 分钟`);
+    logger.info(`启动浮动盈利保护定时任务，间隔: ${CONFIG.MONITORING_INTERVAL / 1000 / 60} 分钟`);
 
-    // // 立即执行一次
-    // handleFloatingProfitProtection();
+    // 立即执行一次
+    handleFloatingProfitProtection();
 
-    // // 设置定时任务
-    // setInterval(handleFloatingProfitProtection, CONFIG.MONITORING_INTERVAL);
+    // 设置定时任务
+    setInterval(handleFloatingProfitProtection, CONFIG.MONITORING_INTERVAL);
 
-    // // 每5分钟重新加载一次配置，确保配置更改能及时生效
-    // setInterval(loadConfig, 5 * 60 * 1000);
+    // 每5分钟重新加载一次配置，确保配置更改能及时生效
+    setInterval(loadConfig, 5 * 60 * 1000);
 };
 
 /**
