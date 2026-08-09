@@ -68,6 +68,7 @@ export const syncPositions = async (req, res) => {
                                 unrealisedPnl: Number(pos.unrealisedPnl) || 0,
                                 leverage: String(pos.leverage || "1"),
                                 cciValue: existing?.cciValue ?? null,
+                                breakEvenTriggered: existing?.breakEvenTriggered ?? false,
                             }
                         },
                         {upsert: true}
