@@ -3,7 +3,7 @@
  *
  * 业务逻辑：
  * 通过API每5分钟更新一次持仓单的盈利状况
- * 当持仓浮盈 ≥ profitThreshold（默认12%）时启动保本止损：
+ * 当持仓浮盈 ≥ profitThreshold（默认4%）时启动保本止损：
  *   做多：止损价移至 入场价 × longMultiplier（默认 1.01）
  *   做空：止损价移至 入场价 × shortMultiplier（默认 0.99）
  *
@@ -20,7 +20,7 @@ const logger = {
 
 // 默认配置
 const DEFAULT_CONFIG = {
-    profitThreshold: 12,
+    profitThreshold: 4,
     longMultiplier: 1.01,
     shortMultiplier: 0.99,
     checkInterval: 5 * 60 * 1000,
