@@ -10,6 +10,9 @@ const TRADE_API_URL = process.env.TRADE_API_URL
 const TRADE_TEST_API_URL = process.env.TRADE_TEST_API_URL
 let client = new GateApi.ApiClient();
 
+// VADMA 策略目标用户（该用户 isActive:false 用于对主策略隐藏，但允许通过 VADMA 通道下单）
+const VADMA_TARGET_USER_ID = "692fd5a6849e48cedf437005";
+
 // 更新保护止损单
 export const updateProtectionStopLoss = async (req, res) => {
     try {
@@ -129,8 +132,8 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
         }
         console.log(moment().format("YYYY-MM-DD HH:mm:ss"),userOptions.userId,"币种",futureContractData);
 
-        // 5. 检查用户是否激活交易
-        if (userOptions.isActive) {
+        // 5. 检查用户是否激活交易（VADMA 目标用户即使 isActive:false 也允许下单）
+        if (userOptions.isActive || String(userOptions.userId) === VADMA_TARGET_USER_ID) {
             // 5.1 获取并保存账户余额
             const futureAccount = await futuresApi.listFuturesAccounts(settle)
             await saveUserBalance(userOptions.userId, futureAccount.body)

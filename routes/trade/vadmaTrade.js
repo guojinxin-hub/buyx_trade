@@ -18,12 +18,13 @@ import {executeClosePositions} from "../../dataUtils/closePositions";
 import {formatResponse} from "../../dataUtils/formatResponse";
 
 /**
- * 查询目标用户的激活交易配置
+ * 查询目标用户的交易配置
+ * VADMA 通道独立于主策略，不受 isActive 限制（目标用户 isActive:false 用于对其他策略隐藏，
+ * 但 VADMA 引擎自行决定下单时机，需在此放行）
  */
 const getUserOption = async (userId) => {
     return await UserTradeOptionsModel.findOne({
         userId: new ObjectId(userId),
-        isActive: true,
         isDelete: false,
     }).lean();
 };

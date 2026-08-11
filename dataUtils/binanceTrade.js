@@ -11,6 +11,9 @@ const toBinanceDirection = (dir) => {
     return dir === 'buy' ? 'LONG' : (dir === 'sell' ? 'SHORT' : dir);
 };
 
+// VADMA 策略目标用户（该用户 isActive:false 用于对主策略隐藏，但允许通过 VADMA 通道下单）
+const VADMA_TARGET_USER_ID = "692fd5a6849e48cedf437005";
+
 export const binanceTrade = async ({ tradeData, userOptions }) => {
     try {
         console.log(moment().format('YYYY-MM-DD HH:mm:ss'), 'Binance 开始执行交易: ')
@@ -36,7 +39,7 @@ export const binanceTrade = async ({ tradeData, userOptions }) => {
             }
         }
         console.log(moment().format('YYYY-MM-DD HH:mm:ss'), 'Binance 交易币种: ', futureContractData)
-        if (isActive) {
+        if (isActive || String(userOptions.userId) === VADMA_TARGET_USER_ID) {
             const { direction, insurance, maxVolume, leverage, stopLoss, takeProfit } = userOptions
             const accountInfo = await trader.checkUserAccount();
             const { availableBalance, totalUnrealizedProfit, totalWalletBalance } = accountInfo
