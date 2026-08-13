@@ -245,6 +245,90 @@ console.log("params.attachAlgoOrds2",params.attachAlgoOrds)
         });
     }
 
+    /**
+     * 获取未触发的止盈止损委托（条件单）
+     * @param {string} instId - 产品ID
+     * @returns {Promise<Array>} 委托列表
+     */
+    async getAlgoOrders(instId) {
+        try {
+            const ordTypes = ['conditional', 'oco', 'move_order_stop'];
+            let allOrders = [];
+            for (const ordType of ordTypes) {
+                const response = await this.client.get('/api/v5/trade/orders-algo-pending', {
+                    params: {instId, ordType}
+                });
+                if (response.data && response.data.length > 0) {
+                    allOrders = allOrders.concat(response.data);
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            return allOrders;
+        } catch (error) {
+            throw new Error(`Failed to get algo orders: ${error.message}`);
+        }
+    }
+
+    /**
+     * 撤销止盈止损委托
+     * @param {Array<Object>} algos - 委托列表 [{algoId, instId}]
+     * @returns {Promise<Object>}
+     */
+    async cancelAlgoOrders(algos) {
+        try {
+            if (!algos || algos.length === 0) {
+                return null;
+            }
+            const response = await this.client.post('/api/v5/trade/cancel-algos', algos);
+            return response;
+        } catch (error) {
+            throw new Error(`Failed to cancel algo orders: ${error.message}`);
+        }
+    }
+
+    /**
+     * 下单止盈止损委托（条件单，可只挂止损或只挂止盈）
+     * @param {Object} params - 参数
+     * @param {string} params.instId - 产品ID
+     * @param {string} params.side - 买卖方向 (buy/sell)
+     * @param {number|string} params.sz - 委托数量（张数）
+     * @param {boolean} params.reduceOnly - 是否只减仓
+     * @param {number} [params.stopLoss] - 止损触发价
+     * @param {number} [params.takeProfit] - 止盈触发价
+     * @param {string} [params.triggerPxType] - 触发价格类型 (last/mark/index)，默认 last
+     * @returns {Promise<Object>}
+     */
+    async placeAlgoOrder(params) {
+        try {
+            const orderData = {
+                instId: params.instId,
+                tdMode: params.tdMode || 'cross',
+                side: params.side,
+                posSide: params.posSide || 'net',
+                ordType: 'conditional',
+                sz: params.sz.toString(),
+                reduceOnly: params.reduceOnly || false
+            };
+
+            if (params.stopLoss) {
+                orderData.slTriggerPx = params.stopLoss.toString();
+                orderData.slOrdPx = '-1'; // -1 表示市价止损
+                orderData.slTriggerPxType = params.triggerPxType || 'last';
+            }
+            if (params.takeProfit) {
+                orderData.tpTriggerPx = params.takeProfit.toString();
+                orderData.tpOrdPx = '-1'; // -1 表示市价止盈
+                orderData.tpTriggerPxType = params.triggerPxType || 'last';
+                orderData.tpOrdKind = 'condition';
+            }
+
+            const response = await this.client.post('/api/v5/trade/order-algo', orderData);
+            return response;
+        } catch (error) {
+            throw new Error(`Failed to place algo order: ${error.message}`);
+        }
+    }
+
     async closePosition(position) {
         try {
             // 判断平仓方向

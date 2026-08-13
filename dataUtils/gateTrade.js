@@ -46,20 +46,24 @@ export const updateProtectionStopLoss = async (req, res) => {
         const formattedPrice = formatPrice(protectionPrice.toString(), findFutureContract.orderPriceRound);
         
         if (Number(formattedPrice) > 0) {
-            // 5. 清除该合约旧的止损条件单，保留止盈条件单
+            // 5. 清除该合约旧的止损条件单（保留止盈条件单）
             try {
                 const priceTriggeredOrder = await futuresApi.listPriceTriggeredOrders(settle, "open", {
                     contract: `${symbol}_USDT`,
                 });
                 await new Promise(resolve => setTimeout(resolve, 500));
-                
+
+                // 只删除旧止损单：做多止损=跌破触发(rule 2)，做空止损=涨破触发(rule 1)；止盈单规则相反，予以保留
                 const stopLossOrders = priceTriggeredOrder.body.filter(order => {
-                    return order.orderType === "close-long-position" || order.orderType === "close-short-position";
+                    if (order.orderType !== "close-long-position" && order.orderType !== "close-short-position") {
+                        return false;
+                    }
+                    return Number(order.trigger?.rule) === (direction === "buy" ? 2 : 1);
                 });
-                
-                if (stopLossOrders.length > 0) {
-                    await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`});
-                    await new Promise(resolve => setTimeout(resolve, 800));
+
+                for (const order of stopLossOrders) {
+                    await futuresApi.cancelPriceTriggeredOrder(settle, order.id);
+                    await new Promise(resolve => setTimeout(resolve, 300));
                 }
             } catch (e) {
                 console.log("清除旧止损条件单失败", e);

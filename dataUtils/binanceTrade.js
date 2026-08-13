@@ -133,7 +133,7 @@ export const updateProtectionStopLoss = async (req, res) => {
         const formattedPrice = formatPrice(protectionPrice.toString(), Number(priceStep));
 
         if (Number(formattedPrice) > 0) {
-            // 4. 清除该合约的止损条件单（只清除止损，保留止盈）
+            // 4. 清除该合约旧的止损条件单（保留止盈条件单）
             try {
                 // 只清除止损类型的条件单，避免影响止盈单
                 await trader.cancelOrders(`${symbol}USDT`, 'stop_loss');

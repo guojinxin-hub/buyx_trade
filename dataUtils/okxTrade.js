@@ -86,6 +86,81 @@ export const okxTrade = async ({tradeData, userOptions}) => {
     }
 }
 
+// 更新保护止损单
+export const updateProtectionStopLoss = async (req, res) => {
+    try {
+        const {userOptions, symbol, direction, protectionPrice} = req.body;
+
+        // 1. 初始化 API 客户端
+        const {apiKey, apiSecret, passphrase, isTestOption = true} = userOptions;
+        const trader = new OKXFuturesTrader({
+            apiKey: decrypt(apiKey),
+            secretKey: decrypt(apiSecret),
+            passphrase,
+            isSimulated: isTestOption
+        });
+
+        const instId = `${symbol}-USDT-SWAP`;
+
+        // 2. 获取合约详细信息
+        const symbols = await trader.getSymbolsInfo();
+        const symbolInfo = symbols.find(s => s.instId === instId);
+        if (!symbolInfo) {
+            return res.status(400).json({success: false, message: '合约不存在'});
+        }
+
+        // 3. 格式化保护止损价格
+        const formattedPrice = trader.formatToPrecision(Number(protectionPrice), symbolInfo.tickSz);
+
+        if (Number(formattedPrice) > 0) {
+            // 4. 先删除旧的止损条件单（保留止盈：记录旧止盈价，新单重新挂回）
+            let oldTakeProfit = null;
+            try {
+                const algoOrders = await trader.client.getAlgoOrders(instId);
+                // 记录旧的止盈触发价
+                const tpOrder = algoOrders.find(o => o.tpTriggerPx && Number(o.tpTriggerPx) > 0);
+                oldTakeProfit = tpOrder ? Number(tpOrder.tpTriggerPx) : null;
+                // 只删除含止损的旧单
+                const slOrders = algoOrders.filter(o => o.slTriggerPx && Number(o.slTriggerPx) > 0);
+                if (slOrders.length > 0) {
+                    await trader.client.cancelAlgoOrders(slOrders.map(o => ({algoId: o.algoId, instId})));
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            } catch (e) {
+                console.log("OKX清除旧止损单失败", e);
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+
+            // 5. 获取当前持仓数量（平仓条件单需要）
+            const currentPosition = await trader.getCurrentPosition(instId);
+            if (!currentPosition) {
+                return res.status(400).json({success: false, message: '无持仓，无需设置保护止损'});
+            }
+            const sz = Math.abs(currentPosition.pos);
+
+            // 6. 创建新的保护止损条件单（市价平仓），保留旧止盈价
+            const closeSide = direction === "buy" ? 'sell' : 'buy';
+            await trader.client.placeAlgoOrder({
+                instId,
+                side: closeSide,
+                sz,
+                reduceOnly: true,
+                stopLoss: formattedPrice,
+                takeProfit: oldTakeProfit || undefined,
+                triggerPxType: 'last'
+            });
+
+            console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);
+            return res.status(200).json({success: true, message: '保护止损单更新成功'});
+        }
+
+        return res.status(200).json({success: false, message: '保护止损价格无效'});
+    } catch (e) {
+        console.log("OKX更新保护止损单出错", e);
+        return res.status(500).json({success: false, message: '更新保护止损单出错', error: e.message});
+    }
+};
+
 /**
  * 获取 OKX 交易所的持仓信息
  * @param {Object} userOptions - 用户配置

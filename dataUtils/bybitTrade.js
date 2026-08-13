@@ -120,6 +120,60 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
     }
 };
 
+// 更新保护止损单
+export const updateProtectionStopLoss = async (req, res) => {
+    try {
+        const {userOptions, symbol, direction, protectionPrice} = req.body;
+
+        // 1. 初始化 API 客户端
+        const {apiKey, apiSecret, isTestOption = true} = userOptions;
+        const trader = new BybitFuturesTrader({
+            apiKey: decrypt(apiKey),
+            secretKey: decrypt(apiSecret),
+            isTestnet: isTestOption
+        });
+
+        const bybitSymbol = `${symbol}USDT`;
+
+        // 2. 获取合约详细信息
+        const symbols = await trader.getSymbolsInfo();
+        const symbolInfo = symbols.find(s => s.symbol === bybitSymbol);
+        if (!symbolInfo) {
+            return res.status(400).json({success: false, message: '合约不存在'});
+        }
+
+        // 3. 格式化保护止损价格
+        const tickSize = parseFloat(symbolInfo?.priceFilter?.tickSize || 0.01);
+        const formattedPrice = trader.formatToPrecision(Number(protectionPrice), tickSize);
+
+        if (Number(formattedPrice) > 0) {
+            // 4. 先删除旧的止盈止损条件单
+            try {
+                await trader.cancelAllOrders(bybitSymbol);
+                await new Promise(resolve => setTimeout(resolve, 500));
+            } catch (e) {
+                console.log("Bybit清除旧止盈止损单失败", e);
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+
+            // 5. 更新持仓止损价（trading-stop 会直接覆盖旧止损价，保留止盈）
+            await trader.client.setTradingStop({
+                symbol: bybitSymbol,
+                positionIdx: 0,
+                stopLoss: formattedPrice.toString()
+            });
+
+            console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);
+            return res.status(200).json({success: true, message: '保护止损单更新成功'});
+        }
+
+        return res.status(200).json({success: false, message: '保护止损价格无效'});
+    } catch (e) {
+        console.log("Bybit更新保护止损单出错", e);
+        return res.status(500).json({success: false, message: '更新保护止损单出错', error: e.message});
+    }
+};
+
 /**
  * 获取 Bybit 交易所的持仓信息
  * @param {Object} userOptions - 用户配置对象

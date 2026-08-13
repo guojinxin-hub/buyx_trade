@@ -1,8 +1,8 @@
 import { gateTrade, updateProtectionStopLoss as updateGateProtectionStopLoss } from "./gateTrade.js";
 import { binanceTrade, updateProtectionStopLoss as updateBinanceProtectionStopLoss } from "./binanceTrade.js";
-import { okxTrade } from "./okxTrade.js";
+import { okxTrade, updateProtectionStopLoss as updateOKXProtectionStopLoss } from "./okxTrade.js";
 import { bitgetTrade, bitgetLeaderTrade } from "./bitgetTrade.js";
-import { bybitTrade } from "./bybitTrade";
+import { bybitTrade, updateProtectionStopLoss as updateBybitProtectionStopLoss } from "./bybitTrade";
 
 export const apiTrade = async ({ tradeData, userOptions }) => {
     const { belong } = userOptions
@@ -66,6 +66,12 @@ export const updateProtectionStopLoss = async (userOption, symbol, direction, pr
             case 'binance':
                 console.log('调用 Binance 交易所的保护止损更新');
                 return await updateBinanceProtectionStopLoss(req, res);
+            case 'okx':
+                console.log('调用 OKX 交易所的保护止损更新');
+                return await updateOKXProtectionStopLoss(req, res);
+            case 'bybit':
+                console.log('调用 Bybit 交易所的保护止损更新');
+                return await updateBybitProtectionStopLoss(req, res);
             default:
                 return { success: false, message: '不支持的交易所' };
         }
