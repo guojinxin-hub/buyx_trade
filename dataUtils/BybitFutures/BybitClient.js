@@ -206,7 +206,9 @@ class BybitClient {
                 orderType: params.orderType,
                 qty: params.qty,
                 positionIdx: params.positionIdx || 0,
-                timeInForce: 'GTC'
+                // Bybit V5 规范：Market 订单必须使用 IOC（GTC 仅用于 Limit 单，
+                // 传 GTC 的 Market 单在 Bybit 收紧校验后会报参数错误导致无法开仓）
+                timeInForce: params.orderType === 'Market' ? 'IOC' : 'GTC'
             };
 
             if (params.price) {
@@ -356,7 +358,12 @@ class BybitClient {
             console.log(`Position mode set to: ${mode === 0 ? 'net_mode' : 'long_short_mode'}`);
             return response.result;
         } catch (error) {
-            throw new Error(`Failed to set position mode: ${error.message}`);
+            // 已是该模式 / 有持仓或挂单时无法切换（账号本就在单向模式），不中断入场流程
+            if (error.message.includes('not modified') || error.message.includes('active order') || error.message.includes('position')) {
+                console.log(`持仓模式无需修改，继续交易: ${error.message}`);
+            } else {
+                throw new Error(`Failed to set position mode: ${error.message}`);
+            }
         }
     }
 

@@ -58,7 +58,12 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
             await new Promise(resolve => setTimeout(resolve, 100));
 
             await saveUserBalance(userOptions.userId, accountBalance.balance);
-            await trader.setPositionMode(0); // 设置单向持仓
+            // 设置单向持仓失败（如已有持仓/挂单无法切换，账号本就在单向模式）不应中断入场
+            try {
+                await trader.setPositionMode(0);
+            } catch (e) {
+                console.log("Bybit设置单向持仓失败，继续尝试入场:", e.message);
+            }
             
             // 获取当前持仓并构建映射 {symbol: direction}
             const positions = await trader.getPositions();
