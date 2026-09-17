@@ -164,7 +164,8 @@ export const getBitgetPositions = async (userOptions) => {
                     size: Number(position.total || 0),
                     exchange: 'bitget',
                     unrealisedPnl: profitPercentage,
-                    absolutePnl: Number(position.unrealizedPL || 0)
+                    absolutePnl: Number(position.unrealizedPL || 0),
+                    leverage: Number(position.leverage || 0) || 1
                 };
             });
     } catch (error) {

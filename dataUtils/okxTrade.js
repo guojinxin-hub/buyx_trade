@@ -246,7 +246,8 @@ export const getOKXPositions = async (userOptions) => {
                     size: posAmt,
                     exchange: 'okx',
                     unrealisedPnl: profitPercentage,
-                    absolutePnl: parseFloat(position.upl) || 0
+                    absolutePnl: parseFloat(position.upl) || 0,
+                    leverage: leverage || 1
                 });
             }
         }

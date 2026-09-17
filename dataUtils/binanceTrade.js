@@ -110,7 +110,7 @@ export const binanceTrade = async ({ tradeData, userOptions }) => {
 
 export const updateProtectionStopLoss = async (req, res) => {
     try {
-        const { userOptions, symbol, direction, protectionPrice } = req.body;
+        const { userOptions, symbol, direction, protectionPrice, entryPrice } = req.body;
 
         // 1. 初始化 API 客户端
         const { apiKey, apiSecret, isTestOption } = userOptions
@@ -130,19 +130,38 @@ export const updateProtectionStopLoss = async (req, res) => {
         const formattedPrice = formatPrice(protectionPrice.toString(), Number(priceStep));
 
         if (Number(formattedPrice) > 0) {
-            // 4. 清除该合约旧的止损条件单（保留止盈条件单）
+            // 4. 清除该合约所有 algo 条件单（止盈止损条件单均已迁移至 Algo Service，
+            // /fapi/v1/openOrders 查不到 algo 单也无法按类型筛选，只能全撤后重挂止盈）
             try {
-                // 只清除止损类型的条件单，避免影响止盈单
-                await trader.cancelOrders(`${symbol}USDT`, 'stop_loss');
+                await trader.cancelAllAlgoOrders(`${symbol}USDT`);
                 // 增加等待时间，确保币安API有足够的时间处理清除操作
                 await new Promise(resolve => setTimeout(resolve, 500));
             } catch (e) {
-                console.log("Binance清除旧止损单失败", e);
+                console.log("Binance清除旧条件单失败", e);
             }
 
-            // 5. 创建新的保护止损条件单
             const closeSide = direction === "buy" ? 'SELL' : "BUY";
 
+            // 5. 重新挂止盈单（全撤会连止盈一起撤掉，按原止盈百分比从入场价重算）
+            const takeProfitPercent = Number(userOptions.takeProfit) || 0;
+            if (takeProfitPercent > 0 && Number(entryPrice) > 0) {
+                const tpPrice = direction === "buy"
+                    ? Number(entryPrice) * (1 + takeProfitPercent / 100)
+                    : Number(entryPrice) * (1 - takeProfitPercent / 100);
+                const formattedTpPrice = formatPrice(tpPrice.toString(), Number(priceStep));
+                try {
+                    await trader.client.placeAlgoOrder(`${symbol}USDT`, {
+                        side: closeSide,
+                        type: 'TAKE_PROFIT_MARKET', // 使用市价止盈
+                        triggerPrice: Number(formattedTpPrice),
+                        closePosition: 'true', // 平仓
+                    });
+                } catch (e) {
+                    console.log("Binance重挂止盈单失败", e);
+                }
+            }
+
+            // 6. 创建新的保护止损条件单
             try {
                 await trader.client.placeAlgoOrder(`${symbol}USDT`, {
                     side: closeSide,
@@ -152,26 +171,14 @@ export const updateProtectionStopLoss = async (req, res) => {
                 });
             } catch (e) {
                 console.log("Binance创建保护止损单失败", e);
-                // 检查是否是因为重复订单错误
-                if (e.message.includes("An open stop or take profit order with GTE and closePosition in the direction is existing")) {
-                    // 再次尝试清除止损订单（只清除止损，保留止盈）
-                    try {
-                        await trader.cancelOrders(`${symbol}USDT`, 'stop_loss');
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        // 再次尝试创建订单
-                        await trader.client.placeAlgoOrder(`${symbol}USDT`, {
-                            side: closeSide,
-                            type: 'STOP_MARKET', // 使用市价止损
-                            triggerPrice: Number(formattedPrice),
-                            closePosition: 'true', // 平仓
-                        });
-                    } catch (retryError) {
-                        console.log("Binance重试创建保护止损单失败", retryError);
-                        throw retryError;
-                    }
-                } else {
-                    throw e;
-                }
+                // 可能是全撤未完全生效导致的 closePosition 冲突，等待后重试一次
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                await trader.client.placeAlgoOrder(`${symbol}USDT`, {
+                    side: closeSide,
+                    type: 'STOP_MARKET', // 使用市价止损
+                    triggerPrice: Number(formattedPrice),
+                    closePosition: 'true', // 平仓
+                });
             }
 
             console.log(`用户 ${userOptions.userId} 的 ${symbol} 保护止损单已更新，价格为 ${formattedPrice}`);
@@ -277,7 +284,8 @@ export const getBinancePositions = async (userOptions) => {
                     size: positionAmt,
                     exchange: 'binance',
                     unrealisedPnl: profitPercentage,
-                    absolutePnl: parseFloat(position.unrealizedProfit) || 0
+                    absolutePnl: parseFloat(position.unrealizedProfit) || 0,
+                    leverage: leverage || 1
                 });
             }
         }

@@ -117,7 +117,8 @@ class BinanceFuturesClient {
                 res.on('end', () => {
                     try {
                         const parsed = JSON.parse(data);
-                        if (parsed.code) {
+                        // Algo Service 成功响应带 code: "200"，只有非 200 的 code 才视为错误
+                        if (parsed.code && Number(parsed.code) !== 200) {
                             reject(new Error(`Binance API Error: ${parsed.msg} (code: ${parsed.code})`));
                         } else {
                             resolve(parsed);
@@ -205,6 +206,11 @@ class BinanceFuturesClient {
     }
     async getOpenOrders(symbol) {
         return this._sendRequest('GET', '/fapi/v1/openOrders', { symbol }, true);
+    }
+    // 撤销该合约所有 algo 条件单（止盈止损等条件单已迁移至 Algo Service，
+    // /fapi/v1/openOrders 查不到 algo 单，也无法按类型筛选撤单，只能全撤）
+    async cancelAllAlgoOpenOrders(symbol) {
+        return this._sendRequest('DELETE', '/fapi/v1/algoOpenOrders', { symbol }, true);
     }
     // 通用下单方法
     async placeOrder(symbol, orderParams) {

@@ -395,6 +395,13 @@ class BinanceFuturesTrader {
     }
 
     /**
+     * 取消该合约所有 algo 条件单（止盈止损条件单均在 Algo Service）
+     */
+    async cancelAllAlgoOrders(symbol) {
+        return retryRequest(() => this.client.cancelAllAlgoOpenOrders(symbol));
+    }
+
+    /**
      * 获取交易对信息
      */
     async getSymbolInfo() {

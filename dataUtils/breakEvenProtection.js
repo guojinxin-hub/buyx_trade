@@ -146,10 +146,11 @@ const handleUserBreakEven = async (userOption) => {
             );
 
             if (updateResult.success) {
-                // 标记该持仓已触发保本止损
+                // 标记该持仓已触发保本止损（upsert 确保无记录时也能写入标记）
                 await UserPositionModel.updateOne(
                     {userId: userOption.userId, exchange, symbol},
-                    {$set: {breakEvenTriggered: true}}
+                    {$set: {breakEvenTriggered: true}},
+                    {upsert: true}
                 );
                 triggeredCount++;
                 logger.info(`${symbol} 保本止损设置成功`);
