@@ -3,6 +3,7 @@ import { decrypt } from "./utils";
 import { intersectionWith, isEmpty } from "lodash";
 import { saveUserBalance } from "./saveUserBalance";
 import { saveTradeRecord } from "./saveTradeRecord";
+import { getAddPositionDecision } from "./addPositionRule";
 import { formatPrice } from "./formatPrice";
 import { TradeRecordModel } from "buydip_scheme/scheme/tradeRecord";
 import moment from "moment";
@@ -47,30 +48,41 @@ export const binanceTrade = async ({ tradeData, userOptions }) => {
             }
             await saveUserBalance(userOptions.userId, accountFunds)
 
-            // 构建当前持仓映射 {symbol: direction}
+            // 构建当前持仓映射 {symbol: direction} 和盈亏映射 {symbol: upl}
             const positionMap = {};
+            const positionUplMap = {};
             if (accountInfo.positions) {
                 for (const pos of accountInfo.positions) {
                     const posAmt = parseFloat(pos.positionAmt);
                     if (posAmt !== 0) {
                         const sym = pos.symbol.replace('USDT', '');
                         positionMap[sym] = posAmt > 0 ? 'buy' : 'sell';
+                        positionUplMap[sym] = parseFloat(pos.unrealizedProfit) || 0;
                     }
                 }
             }
 
             for (const item of futureContractData) {
-                // 检查同方向是否已有持仓，有则跳过不加仓
+                // 同向持仓：按加仓规则（每日1次/最多3次/按盈亏比例）决定加仓资金；反向或无持仓用原始单资金
+                let usdtAmount = Number(maxVolume);
                 if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
-                    console.log(`Binance ${item.symbol} 同方向已有持仓，跳过加仓`);
-                    continue;
+                    const decision = await getAddPositionDecision({
+                        userId: userOptions.userId,
+                        symbol: item.symbol,
+                        maxVolume: Number(maxVolume),
+                        upl: positionUplMap[item.symbol]
+                    });
+                    if (!decision) {
+                        continue;
+                    }
+                    usdtAmount = decision.addUsdt;
                 }
 
                 // 执行交易
                 console.log("Binance 开始执行交易: ", userOptions.userId)
                 const result = await trader.executeTrade({
                     symbol: `${item.symbol}USDT`,
-                    usdtAmount: Number(maxVolume),
+                    usdtAmount,
                     direction: toBinanceDirection(item.direction),
                     leverage: Number(leverage),
                     minMargin: Number(insurance),

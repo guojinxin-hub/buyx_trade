@@ -2,6 +2,7 @@ import {intersectionWith, isEmpty} from "lodash";
 import {formatPrice} from "./formatPrice.js";
 import {decrypt} from "./utils/index.js";
 import {saveTradeRecord} from "./saveTradeRecord.js";
+import {getAddPositionDecision} from "./addPositionRule.js";
 import {saveUserBalance} from "./saveUserBalance.js";
 import moment from "moment";
 
@@ -195,9 +196,19 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                         // 3. 反手开新仓
                         await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
                     } 
-                    // 逻辑 C: 持仓方向与信号一致 -> 不加仓，直接跳过
+                    // 逻辑 C: 持仓方向与信号一致 -> 按加仓规则（每日1次/最多3次/按盈亏比例）决定加仓资金
                     else if (position && ((Number(position.body.size) > 0 && direction === "buy") || (Number(position.body.size) < 0 && direction === "sell"))) {
-                        console.log(`Gate ${symbol} 同方向已有持仓，跳过加仓`)
+                        const decision = await getAddPositionDecision({
+                            userId: userOptions.userId,
+                            symbol,
+                            maxVolume: Number(userOptions.maxVolume),
+                            upl: Number(position.body.unrealised_pnl) || 0
+                        });
+                        if (decision) {
+                            await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions, decision.addUsdt);
+                        } else {
+                            console.log(`Gate ${symbol} 不满足加仓条件，跳过加仓`)
+                        }
                     }
                     await new Promise(resolve => setTimeout(resolve, 200));
                 } catch (e) {
@@ -210,26 +221,27 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
     }
 }
 
-// 下单
-const createOrder = async (futuresApi, futureContractData, settle, symbol, direction, userOptions) => {
+// 下单（usdtAmount：下单资金，同向加仓时由加仓规则传入，入场/反手时不传则用原始单资金 maxVolume）
+const createOrder = async (futuresApi, futureContractData, settle, symbol, direction, userOptions, usdtAmount) => {
     try {
         console.log("Gate下单", userOptions.userId)
+        const orderUsdt = Number(usdtAmount) || Number(userOptions.maxVolume)
         
         // 1. 检查用户是否允许该方向的交易 (userOptions.direction 为 "all", "buy" 或 "sell")
         if ((userOptions.direction === "all") || userOptions.direction === direction) {
             
             // 2. 获取账户余额并检查可用资金
             const futureAccount = await futuresApi.listFuturesAccounts(settle)
-            // 计算公式：可用余额 - 保险资金 > (最大下单金额 / 杠杆)
+            // 计算公式：可用余额 - 保险资金 > (下单金额 / 杠杆)
             // 这里的逻辑是确保除去保险金后，剩下的钱足以开仓
-            const canTrade = (Number(futureAccount.body.available) - Number(userOptions.insurance)) > (Number(userOptions.maxVolume) / Number(userOptions.leverage))
+            const canTrade = (Number(futureAccount.body.available) - Number(userOptions.insurance)) > (orderUsdt / Number(userOptions.leverage))
             
             if (canTrade) {
                 // 3. 计算下单数量
                 const findFutureContract = futureContractData.find(item => item.name === `${symbol}_USDT`)
-                // 计算逻辑：(最大下单金额 / (合约乘数 * 标记价格)) * 杠杆倍数
+                // 计算逻辑：(下单金额 / (合约乘数 * 标记价格)) * 杠杆倍数
                 // 注意：这里计算的是张数
-                const size = Math.floor(Number(userOptions.maxVolume) / (Number(findFutureContract.quantoMultiplier) * Number(findFutureContract.markPrice)) * Number(userOptions.leverage))
+                const size = Math.floor(orderUsdt / (Number(findFutureContract.quantoMultiplier) * Number(findFutureContract.markPrice)) * Number(userOptions.leverage))
                 
                 if (size > 0) {
                     // 4. 设置杠杆

@@ -363,6 +363,7 @@ class OKXFuturesTrader {
             const size = this.calculateQuantity({symbolInfo, lastPrice: currentPrice, usdtAmount, leverage})
 
             const currentPosition = await this.getCurrentPosition(instId);
+            let order = null;
             if (currentPosition) {
                 const currentDirection = currentPosition.pos > 0 ? "buy" : "sell";
                 if ((currentDirection === 'buy' && direction === 'sell') ||
@@ -372,7 +373,7 @@ class OKXFuturesTrader {
                     // 等待平仓完成
                     if (settingDirection === "all" || direction === settingDirection) {
                         await new Promise(resolve => setTimeout(resolve, 100));
-                        await this.client.placeOrderWithUsdt({
+                        order = await this.client.placeOrderWithUsdt({
                             instId,
                             side: direction,
                             size: size, // 100 USDT
@@ -387,9 +388,10 @@ class OKXFuturesTrader {
                         });
                     }
                 } else if (currentPosition.pos > 0 && direction === "buy" || currentPosition.pos < 0 && direction === "sell") {
-                    // 盈利加仓
-                    if (currentPosition.upl > 0 && (settingDirection === "all" || direction === settingDirection)) {
-                        const order = await this.client.placeOrderWithUsdt({
+                    // 同向持仓：加仓资金与次数已由包装层按加仓规则决定，此处直接加仓
+                    if (settingDirection === "all" || direction === settingDirection) {
+                        console.log('同向持仓，执行加仓');
+                        order = await this.client.placeOrderWithUsdt({
                             instId,
                             side: direction,
                             size: size, // 100 USDT
@@ -406,7 +408,7 @@ class OKXFuturesTrader {
                 }
             } else {
                 if (settingDirection === "all" || direction === settingDirection) {
-                    const order = await this.client.placeOrderWithUsdt({
+                    order = await this.client.placeOrderWithUsdt({
                         instId,
                         side: direction,
                         size: size, // 100 USDT
@@ -423,6 +425,7 @@ class OKXFuturesTrader {
             }
             return {
                 success: true,
+                order,
             };
         } catch (error) {
             console.error('交易执行失败:', error.message);

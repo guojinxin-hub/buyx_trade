@@ -339,11 +339,11 @@ class BybitFuturesTrader {
                         };
                     }
                 }
-                // 同向持仓：盈利加仓
+                // 同向持仓：加仓资金与次数已由包装层按加仓规则决定，此处直接加仓
                 else if ((currentDirection === "Buy" && direction === "Buy") ||
                     (currentDirection === "Sell" && direction === "Sell")) {
-                    if (currentPosition.unrealisedPnl > 0 && (settingDirection === "all" || direction === settingDirection)) {
-                        console.log('盈利加仓');
+                    if (settingDirection === "all" || direction === settingDirection) {
+                        console.log('同向持仓，执行加仓');
                         const order = await this.client.placeOrder({
                             symbol: symbol,
                             side: direction,
@@ -358,8 +358,6 @@ class BybitFuturesTrader {
                             success: true,
                             order: order
                         };
-                    } else {
-                        console.log('持仓亏损，不加仓');
                     }
                 }
             } else {

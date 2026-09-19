@@ -4,6 +4,7 @@ import BitgetLeaderTrade from "./BitgetFutures/BitgetLeaderTrade";
 import {decrypt} from "./utils";
 import {saveUserBalance} from "./saveUserBalance";
 import { saveTradeRecord } from "./saveTradeRecord";
+import { getAddPositionDecision } from "./addPositionRule";
 
 export const bitgetTrade = async ({tradeData, userOptions}) => {
     console.log("Bitget交易启动");
@@ -68,29 +69,40 @@ export const bitgetTrade = async ({tradeData, userOptions}) => {
             console.log("accountBalance",accountBalance)
             await saveUserBalance(userOptions.userId, accountBalance.balance);
 
-            // 获取当前持仓并构建映射 {symbol: direction}
+            // 获取当前持仓并构建映射 {symbol: direction} 和盈亏映射 {symbol: upl}
             const positions = await trader.getPositions();
             const positionMap = {};
+            const positionUplMap = {};
             if (positions && Array.isArray(positions)) {
                 for (const pos of positions) {
                     const total = Number(pos.total || 0);
                     if (Math.abs(total) > 0) {
                         const sym = (pos.symbol || '').replace('USDT_UMCBL', '');
                         positionMap[sym] = pos.holdSide === 'long' ? 'buy' : 'sell';
+                        positionUplMap[sym] = parseFloat(pos.unrealizedPL) || 0;
                     }
                 }
             }
 
             for (const item of futureContractData) {
-                // 检查同方向是否已有持仓，有则跳过不加仓
+                // 同向持仓：按加仓规则（每日1次/最多3次/按盈亏比例）决定加仓资金；反向或无持仓用原始单资金
+                let usdtAmount = Number(maxVolume);
                 if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
-                    console.log(`Bitget ${item.symbol} 同方向已有持仓，跳过加仓`);
-                    continue;
+                    const decision = await getAddPositionDecision({
+                        userId: userOptions.userId,
+                        symbol: item.symbol,
+                        maxVolume: Number(maxVolume),
+                        upl: positionUplMap[item.symbol]
+                    });
+                    if (!decision) {
+                        continue;
+                    }
+                    usdtAmount = decision.addUsdt;
                 }
                 
                 const result = await trader.executeTrade({
                     symbol: `${item.symbol}`,
-                    usdtAmount: Number(maxVolume),
+                    usdtAmount,
                     direction: item.direction,
                     leverage: Number(leverage),
                     minMargin: Number(insurance),
@@ -229,25 +241,36 @@ export const bitgetLeaderTrade = async ({tradeData, userOptions}) => {
             // 获取用户配置的交易参数
             const {direction, maxVolume, leverage, stopLoss, takeProfit} = userOptions;
 
-            // 获取当前持仓并构建映射 {symbol: direction}
+            // 获取当前持仓并构建映射 {symbol: direction} 和盈亏映射 {symbol: upl}
             const positions = await trader.getPositions();
             const positionMap = {};
+            const positionUplMap = {};
             if (positions && Array.isArray(positions)) {
                 for (const pos of positions) {
                     const total = Number(pos.total || 0);
                     if (Math.abs(total) > 0) {
                         const sym = (pos.symbol || '').replace('USDT_UMCBL', '');
                         positionMap[sym] = pos.holdSide === 'long' ? 'buy' : 'sell';
+                        positionUplMap[sym] = parseFloat(pos.unrealizedPL) || 0;
                     }
                 }
             }
 
             // 遍历每个交易项并执行交易
             for (const item of filterTradeData) {
-                // 检查同方向是否已有持仓，有则跳过不加仓
+                // 同向持仓：按加仓规则（每日1次/最多3次/按盈亏比例）决定加仓资金；反向或无持仓用原始单资金
+                let usdtAmount = Number(maxVolume);
                 if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
-                    console.log(`Bitget带单 ${item.symbol} 同方向已有持仓，跳过加仓`);
-                    continue;
+                    const decision = await getAddPositionDecision({
+                        userId: userOptions.userId,
+                        symbol: item.symbol,
+                        maxVolume: Number(maxVolume),
+                        upl: positionUplMap[item.symbol]
+                    });
+                    if (!decision) {
+                        continue;
+                    }
+                    usdtAmount = decision.addUsdt;
                 }
                 
                 // 调用executeTrade方法执行带单交易
@@ -261,7 +284,7 @@ export const bitgetLeaderTrade = async ({tradeData, userOptions}) => {
                 // - settingDirection: 设置的方向过滤 (all/buy/sell)，来自userOptions
                 const result = await trader.executeTrade({
                     symbol: `${item.symbol}`,
-                    usdtAmount: Number(maxVolume),
+                    usdtAmount,
                     direction: item.direction,  // 使用tradeData中的direction
                     leverage: Number(leverage),
                     takeProfitPercent: Number(takeProfit),

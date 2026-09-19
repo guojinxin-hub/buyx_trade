@@ -104,8 +104,9 @@ export const postRecommendData = async (req, res) => {
                 }
 
                 // 5.2 获取用户今日已交易的币种（去重）
+                // 注意：saveTradeRecord 写入的是 userOptions.userId（users 表 ObjectId），此处必须一致
                 const tradedSymbols = await TradeRecordModel.find({
-                    userId: option._id,
+                    userId: option.userId,
                     createdAt: {$gte: moment().startOf('day').toDate()},
                 }).distinct('symbol');
 

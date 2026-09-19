@@ -2,6 +2,7 @@ import { intersectionWith, isEmpty } from "lodash";
 import BybitFuturesTrader from "./BybitFutures/BybitFuturesTrade";
 import { saveUserBalance } from "./saveUserBalance";
 import { saveTradeRecord } from "./saveTradeRecord";
+import { getAddPositionDecision } from "./addPositionRule";
 import { decrypt } from "./utils";
 
 /**
@@ -65,31 +66,42 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
                 console.log("Bybit设置单向持仓失败，继续尝试入场:", e.message);
             }
             
-            // 获取当前持仓并构建映射 {symbol: direction}
+            // 获取当前持仓并构建映射 {symbol: direction} 和盈亏映射 {symbol: upl}
             const positions = await trader.getPositions();
             await new Promise(resolve => setTimeout(resolve, 100));
             const positionMap = {};
+            const positionUplMap = {};
             if (positions && Array.isArray(positions)) {
                 for (const pos of positions) {
                     const posAmt = parseFloat(pos.pos);
                     if (Math.abs(posAmt) > 0) {
                         const sym = (pos.instId || '').replace('USDT', '');
                         positionMap[sym] = pos.side === 'Buy' ? 'buy' : 'sell';
+                        positionUplMap[sym] = parseFloat(pos.upl) || 0;
                     }
                 }
             }
             
             // 执行每个交易对的交易
             for (const item of futureContractData) {
-                // 检查同方向是否已有持仓，有则跳过不加仓
+                // 同向持仓：按加仓规则（每日1次/最多3次/按盈亏比例）决定加仓资金；反向或无持仓用原始单资金
+                let usdtAmount = Number(maxVolume);
                 if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
-                    console.log(`Bybit ${item.symbol} 同方向已有持仓，跳过加仓`);
-                    continue;
+                    const decision = await getAddPositionDecision({
+                        userId: userOptions.userId,
+                        symbol: item.symbol,
+                        maxVolume: Number(maxVolume),
+                        upl: positionUplMap[item.symbol]
+                    });
+                    if (!decision) {
+                        continue;
+                    }
+                    usdtAmount = decision.addUsdt;
                 }
                 
                 const result = await trader.executeTrade({
                     symbol: `${item.symbol}USDT`,
-                    usdtAmount: Number(maxVolume),
+                    usdtAmount,
                     direction: item.direction === 'buy' ? 'Buy' : 'Sell',
                     leverage: Number(leverage),
                     minMargin: Number(insurance),

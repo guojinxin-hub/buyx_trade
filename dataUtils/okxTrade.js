@@ -2,6 +2,8 @@
 import {intersectionWith, isEmpty} from "lodash";
 import OKXFuturesTrader from "./OKXFutures/OKXFuturesTrade";
 import {saveUserBalance} from "./saveUserBalance";
+import {saveTradeRecord} from "./saveTradeRecord";
+import {getAddPositionDecision} from "./addPositionRule";
 import {decrypt} from "./utils";
 
 export const okxTrade = async ({tradeData, userOptions}) => {
@@ -45,31 +47,42 @@ export const okxTrade = async ({tradeData, userOptions}) => {
                 await trader.setPositionMode('net_mode')
             }
             
-            // 获取当前持仓并构建映射 {symbol: direction}
+            // 获取当前持仓并构建映射 {symbol: direction} 和盈亏映射 {symbol: upl}
             const positions = await trader.getPositions()
             await new Promise(resolve => setTimeout(resolve, 100));
             const positionMap = {};
+            const positionUplMap = {};
             if (positions && Array.isArray(positions)) {
                 for (const pos of positions) {
                     const posAmt = parseFloat(pos.pos);
                     if (posAmt !== 0) {
                         const sym = pos.instId.replace('-USDT-SWAP', '');
                         positionMap[sym] = posAmt > 0 ? 'buy' : 'sell';
+                        positionUplMap[sym] = parseFloat(pos.upl) || 0;
                     }
                 }
             }
             
             for (const item of futureContractData) {
-                // 检查同方向是否已有持仓，有则跳过不加仓
+                // 同向持仓：按加仓规则（每日1次/最多3次/按盈亏比例）决定加仓资金；反向或无持仓用原始单资金
+                let usdtAmount = Number(maxVolume);
                 if (positionMap[item.symbol] && positionMap[item.symbol] === item.direction) {
-                    console.log(`OKX ${item.symbol} 同方向已有持仓，跳过加仓`);
-                    continue;
+                    const decision = await getAddPositionDecision({
+                        userId: userOptions.userId,
+                        symbol: item.symbol,
+                        maxVolume: Number(maxVolume),
+                        upl: positionUplMap[item.symbol]
+                    });
+                    if (!decision) {
+                        continue;
+                    }
+                    usdtAmount = decision.addUsdt;
                 }
                 
                 // 执行交易
                 const result = await trader.executeTrade({
                     instId: `${item.symbol}-USDT-SWAP`, // 交易对
-                    usdtAmount: Number(maxVolume), // 交易金额
+                    usdtAmount, // 交易金额
                     direction: item.direction, // 方向: buy/sell
                     leverage: Number(leverage), // 杠杆倍数
                     minMargin: Number(insurance), // 最小保证金要求
@@ -79,6 +92,25 @@ export const okxTrade = async ({tradeData, userOptions}) => {
                     settingDirection: direction,
                 });
                 console.log('交易结果:', result);
+
+                // 保存交易记录
+                if (result.success && result.order) {
+                    try {
+                        await saveTradeRecord(userOptions.userId, {
+                            symbol: item.symbol,
+                            price: result.order.avgPx || result.order.px || '0',
+                            size: result.order.accSz || result.order.sz || '0',
+                            direction: item.direction,
+                            exchange: 'okx',
+                            orderId: result.order.ordId || result.order.id || '',
+                            leverage: String(leverage),
+                            status: 'pending'
+                        });
+                        console.log(`交易记录保存成功: ${result.order.ordId || result.order.id}`);
+                    } catch (error) {
+                        console.error(`交易记录保存失败: ${error.message}`);
+                    }
+                }
             }
         }
     } catch (error) {

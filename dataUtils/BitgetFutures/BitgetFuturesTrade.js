@@ -220,13 +220,8 @@ class BitgetFuturesTrade {
                 if (isOpposite) {
                     await this.client.closePosition(symbol, currentPosition.holdSide, currentPosition.total);
                     await new Promise((r) => setTimeout(r, 150));
-                } else {
-                    const isSameDirection = (currentPosition.holdSide === 'long' && direction === 'buy')
-                        || (currentPosition.holdSide === 'short' && direction === 'sell');
-                    if (isSameDirection && currentPosition.upl <= 0) {
-                        return {success: false, message: '同向持仓未盈利，不加仓'};
-                    }
                 }
+                // 同向持仓：加仓资金与次数已由包装层按加仓规则决定，此处直接加仓
             }
 
             if (!(settingDirection === 'all' || settingDirection === direction)) {
