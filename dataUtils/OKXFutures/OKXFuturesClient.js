@@ -178,25 +178,35 @@ class OKXClient {
                 params.px = parseFloat(params.px.toFixed(decimals));
             }
 
-            console.log("params.attachAlgoOrds1",params.attachAlgoOrds)
-            // 处理止盈止损价格精度
+            // 处理止盈止损：OKX V5 要求 attachAlgoOrds 中价格字段全部为字符串
+            // （toFixed 直接返回字符串，避免 Number 的浮点尾巴与科学计数法）
+            let attachAlgoOrds;
             if (params.attachAlgoOrds) {
                 const instrument = await this.getInstrumentInfo(params.instId);
                 const tickSz = parseFloat(instrument.tickSz);
                 const decimals = Math.abs(Math.log10(tickSz));
-
-                if (params.attachAlgoOrds.tpTriggerPx) {
-                    params.attachAlgoOrds.tpTriggerPx = parseFloat(
-                        params.attachAlgoOrds.tpTriggerPx.toFixed(decimals)
-                    );
+                const algo = params.attachAlgoOrds;
+                attachAlgoOrds = {};
+                if (algo.tpTriggerPx !== undefined && algo.tpTriggerPx !== null) {
+                    attachAlgoOrds.tpTriggerPx = Number(algo.tpTriggerPx).toFixed(decimals);
                 }
-                if (params.attachAlgoOrds.slTriggerPx) {
-                    params.attachAlgoOrds.slTriggerPx = parseFloat(
-                        params.attachAlgoOrds.slTriggerPx.toFixed(decimals)
-                    );
+                if (algo.tpOrdPx !== undefined && algo.tpOrdPx !== null) {
+                    attachAlgoOrds.tpOrdPx = String(algo.tpOrdPx); // "-1" 表示市价止盈
+                }
+                if (algo.tpTriggerPxType) {
+                    attachAlgoOrds.tpTriggerPxType = algo.tpTriggerPxType;
+                }
+                if (algo.slTriggerPx !== undefined && algo.slTriggerPx !== null) {
+                    attachAlgoOrds.slTriggerPx = Number(algo.slTriggerPx).toFixed(decimals);
+                }
+                if (algo.slOrdPx !== undefined && algo.slOrdPx !== null) {
+                    attachAlgoOrds.slOrdPx = String(algo.slOrdPx); // "-1" 表示市价止损
+                }
+                if (algo.slTriggerPxType) {
+                    attachAlgoOrds.slTriggerPxType = algo.slTriggerPxType;
                 }
             }
-console.log("params.attachAlgoOrds2",params.attachAlgoOrds)
+
             const orderData = {
                 isTradeBorrowMode: false,
                 instId: params.instId,
@@ -204,7 +214,7 @@ console.log("params.attachAlgoOrds2",params.attachAlgoOrds)
                 side: params.side,
                 posSide: params.posSide || 'net',
                 ordType: params.ordType,
-                sz: params.sz,
+                sz: String(params.sz),
                 reduceOnly: params.reduceOnly || false
             };
 
@@ -212,13 +222,17 @@ console.log("params.attachAlgoOrds2",params.attachAlgoOrds)
                 orderData.px = params.px.toString();
             }
 
-            if (params.attachAlgoOrds) {
-                orderData.attachAlgoOrds = [params.attachAlgoOrds];
+            if (attachAlgoOrds) {
+                orderData.attachAlgoOrds = [attachAlgoOrds];
             }
-            console.log("orderData", orderData)
+
             const response = await this.client.post('/api/v5/trade/order', orderData);
-            console.log("response", response)
-            return response.data[0];
+            const result = response.data[0];
+            // 顶层 code=0 不代表订单成功；附加止盈止损被拒时 sCode!=0，必须显式检查
+            if (result && result.sCode !== undefined && result.sCode !== '0') {
+                throw new Error(`Order rejected: ${result.sMsg} (sCode: ${result.sCode})`);
+            }
+            return result;
         } catch (error) {
             throw new Error(`Failed to place order: ${error.message}`);
         }
