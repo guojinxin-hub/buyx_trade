@@ -2,7 +2,7 @@
  * 统一加仓决策规则
  *
  * 规则：
- * 1. 入场当日不加仓，同个币种每日只入场(加仓)1次 ——【已临时移除便于测试，恢复见代码 TODO 标记】
+ * 1. 入场当日不加仓，同个币种每日只入场(加仓)1次
  * 2. 每个币种最多加仓3次
  * 3. 3次加仓资金/原始单资金比例 —— 亏损单: 20%/30%/50%，盈利单: 50%/30%/20%
  *
@@ -31,16 +31,15 @@ const PROFIT_RATIOS = [0.5, 0.3, 0.2]; // 盈利单：50% / 30% / 20%
 export const getAddPositionDecision = async ({ userId, symbol, maxVolume, upl }) => {
     try {
         // 规则1：入场当日不加仓，同个币种每日只入场(加仓)1次
-        // TODO【临时移除便于测试】测试完成后恢复以下注释代码
-        // const todayCount = await TradeRecordModel.countDocuments({
-        //     userId,
-        //     symbol,
-        //     createdAt: { $gte: moment().startOf('day').toDate() }
-        // });
-        // if (todayCount > 0) {
-        //     console.log(`[加仓规则] ${symbol} 今日已入场/加仓过，当日不再操作`);
-        //     return null;
-        // }
+        const todayCount = await TradeRecordModel.countDocuments({
+            userId,
+            symbol,
+            createdAt: { $gte: moment().startOf('day').toDate() }
+        });
+        if (todayCount > 0) {
+            console.log(`[加仓规则] ${symbol} 今日已入场/加仓过，当日不再操作`);
+            return null;
+        }
 
         // 规则2：每个币种最多加仓3次
         const pendingCount = await TradeRecordModel.countDocuments({ userId, symbol, status: 'pending' });
