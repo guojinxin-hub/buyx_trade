@@ -72,7 +72,8 @@ export const okxTrade = async ({tradeData, userOptions}) => {
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
                         upl: positionUplMap[item.symbol],
-                        exchange: 'okx'
+                        exchange: 'okx',
+                        direction: item.direction
                     });
                     if (!decision) {
                         continue;

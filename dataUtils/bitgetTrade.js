@@ -77,7 +77,8 @@ export const bitgetTrade = async ({tradeData, userOptions}) => {
                 for (const pos of positions) {
                     const total = Number(pos.total || 0);
                     if (Math.abs(total) > 0) {
-                        const sym = (pos.symbol || '').replace('USDT_UMCBL', '');
+                        // 兼容 v1(BTCUSDT_UMCBL) 与 v2(BTCUSDT) 两种持仓 symbol 形态
+                        const sym = (pos.symbol || '').replace('USDT_UMCBL', '').replace(/USDT$/, '');
                         positionMap[sym] = pos.holdSide === 'long' ? 'buy' : 'sell';
                         positionUplMap[sym] = parseFloat(pos.unrealizedPL) || 0;
                     }
@@ -93,7 +94,8 @@ export const bitgetTrade = async ({tradeData, userOptions}) => {
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
                         upl: positionUplMap[item.symbol],
-                        exchange: 'bitget'
+                        exchange: 'bitget',
+                        direction: item.direction
                     });
                     if (!decision) {
                         continue;
@@ -250,7 +252,8 @@ export const bitgetLeaderTrade = async ({tradeData, userOptions}) => {
                 for (const pos of positions) {
                     const total = Number(pos.total || 0);
                     if (Math.abs(total) > 0) {
-                        const sym = (pos.symbol || '').replace('USDT_UMCBL', '');
+                        // 兼容 v1(BTCUSDT_UMCBL) 与 v2(BTCUSDT) 两种持仓 symbol 形态
+                        const sym = (pos.symbol || '').replace('USDT_UMCBL', '').replace(/USDT$/, '');
                         positionMap[sym] = pos.holdSide === 'long' ? 'buy' : 'sell';
                         positionUplMap[sym] = parseFloat(pos.unrealizedPL) || 0;
                     }
@@ -267,7 +270,8 @@ export const bitgetLeaderTrade = async ({tradeData, userOptions}) => {
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
                         upl: positionUplMap[item.symbol],
-                        exchange: 'bitget_leader'
+                        exchange: 'bitget_leader',
+                        direction: item.direction
                     });
                     if (!decision) {
                         continue;

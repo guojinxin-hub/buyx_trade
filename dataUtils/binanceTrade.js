@@ -71,7 +71,8 @@ export const binanceTrade = async ({ tradeData, userOptions }) => {
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
                         upl: positionUplMap[item.symbol],
-                        exchange: 'binance'
+                        exchange: 'binance',
+                        direction: item.direction
                     });
                     if (!decision) {
                         continue;

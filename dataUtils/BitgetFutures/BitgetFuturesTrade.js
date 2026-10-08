@@ -214,14 +214,17 @@ class BitgetFuturesTrade {
             const currentPosition = await this.getCurrentPosition(symbol);
             console.log("currentPosition", currentPosition)
 
+            let isAddPosition = false;
             if (currentPosition) {
                 const isOpposite = (currentPosition.holdSide === 'long' && direction === 'sell')
                     || (currentPosition.holdSide === 'short' && direction === 'buy');
                 if (isOpposite) {
                     await this.client.closePosition(symbol, currentPosition.holdSide, currentPosition.total);
                     await new Promise((r) => setTimeout(r, 150));
+                } else {
+                    // 同向持仓：加仓资金与次数已由包装层按加仓规则决定，此处直接加仓
+                    isAddPosition = true;
                 }
-                // 同向持仓：加仓资金与次数已由包装层按加仓规则决定，此处直接加仓
             }
 
             if (!(settingDirection === 'all' || settingDirection === direction)) {
@@ -233,13 +236,14 @@ class BitgetFuturesTrade {
             let stopLossPrice = undefined;
             const priceStep = symbolInfo?.pricePlace
             console.log("priceStep",priceStep)
-            if (takeProfitPercent > 0) {
+            // 加仓时不再重设止盈止损，保留原仓位已有的计划委托（避免按加仓价把原止损整体挪走）
+            if (!isAddPosition && takeProfitPercent > 0) {
                 takeProfitPrice = direction === 'buy'
                     ? currentPrice * (1 + takeProfitPercent / 100)
                     : currentPrice * (1 - takeProfitPercent / 100);
                 takeProfitPrice = takeProfitPrice.toFixed(Number(priceStep))
             }
-            if (stopLossPercent > 0) {
+            if (!isAddPosition && stopLossPercent > 0) {
                 stopLossPrice = direction === 'buy'
                     ? currentPrice * (1 - stopLossPercent / 100)
                     : currentPrice * (1 + stopLossPercent / 100);

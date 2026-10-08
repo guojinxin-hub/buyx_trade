@@ -274,10 +274,23 @@ class BybitFuturesTrader {
             console.log(`设置杠杆: ${leverage}x`);
             await this._delay(100);
 
-            // 3. 获取当前价格和计算数量
+            // 3. 获取当前价格
             const ticker = await this.client.getTicker(symbol);
             await this._delay(100);
             const currentPrice = parseFloat(ticker.lastPrice);
+
+            // 获取当前持仓（判断反手 / 加仓）
+            const currentPosition = await this.getCurrentPosition(symbol);
+            await this._delay(100);
+            const hasPosition = !isEmpty(currentPosition);
+            let isReverse = false;
+            let isAddPosition = false;
+            if (hasPosition) {
+                const currentDirection = currentPosition.side;
+                isReverse = (currentDirection === 'Buy' && direction === 'Sell') ||
+                    (currentDirection === 'Sell' && direction === 'Buy');
+                isAddPosition = !isReverse;
+            }
 
             // 计算止盈止损价格
             let takeProfitPrice, stopLossPrice;
@@ -301,6 +314,17 @@ class BybitFuturesTrader {
 
             console.log(`当前价格 ${currentPrice}, 止盈价格: ${takeProfitPrice}, 止损价格: ${stopLossPrice}`);
 
+            // 止盈止损仅在"配置了百分比"且"非加仓"时随单提交：
+            // - 百分比为 0 时不再提交（否则 TP=当前价会被 Bybit 判为非法价而整单被拒）
+            // - 加仓不重设，保留原仓位的止盈止损（避免按加仓价把原止损整体挪走）
+            const buildTpSl = (skip) => {
+                const tpSl = {};
+                if (skip) return tpSl;
+                if (takeProfitPercent > 0 && Number(takeProfitPrice) > 0) tpSl.takeProfit = takeProfitPrice.toString();
+                if (stopLossPercent > 0 && Number(stopLossPrice) > 0) tpSl.stopLoss = stopLossPrice.toString();
+                return tpSl;
+            };
+
             // 计算数量
             const quantity = this.calculateQuantity({
                 symbolInfo,
@@ -309,19 +333,13 @@ class BybitFuturesTrader {
                 leverage
             });
 
-            // 获取当前持仓
-            const currentPosition = await this.getCurrentPosition(symbol);
-            await this._delay(100);
-            if (!isEmpty(currentPosition)) {
-                const currentDirection = currentPosition.side;
-                // 反向持仓：先平仓再开仓
-                if ((currentDirection === 'Buy' && direction === 'Sell') ||
-                    (currentDirection === 'Sell' && direction === 'Buy')) {
-                    console.log(`发现反向持仓，先平仓: ${currentDirection}`);
+            if (hasPosition) {
+                // 反向持仓：先平仓再开仓（新仓位，正常挂止盈止损）
+                if (isReverse) {
+                    console.log(`发现反向持仓，先平仓: ${currentPosition.side}`);
                     await this.closePosition(symbol);
                     await this._delay(100);
 
-                    // 开新仓并设置止盈止损
                     if (settingDirection === "all" || direction === settingDirection) {
                         const order = await this.client.placeOrder({
                             symbol: symbol,
@@ -329,8 +347,7 @@ class BybitFuturesTrader {
                             orderType: 'Market',
                             qty: quantity.toString(),
                             positionIdx: 0,
-                            takeProfit: takeProfitPrice.toString(),
-                            stopLoss: stopLossPrice.toString()
+                            ...buildTpSl(false)
                         });
                         console.log('开仓结果:', order);
                         return {
@@ -339,19 +356,17 @@ class BybitFuturesTrader {
                         };
                     }
                 }
-                // 同向持仓：加仓资金与次数已由包装层按加仓规则决定，此处直接加仓
-                else if ((currentDirection === "Buy" && direction === "Buy") ||
-                    (currentDirection === "Sell" && direction === "Sell")) {
+                // 同向持仓：加仓资金与次数已由包装层按加仓规则决定，此处直接加仓并保留原止盈止损
+                else if (isAddPosition) {
                     if (settingDirection === "all" || direction === settingDirection) {
-                        console.log('同向持仓，执行加仓');
+                        console.log('同向持仓，执行加仓（保留原有止盈止损）');
                         const order = await this.client.placeOrder({
                             symbol: symbol,
                             side: direction,
                             orderType: 'Market',
                             qty: quantity.toString(),
                             positionIdx: 0,
-                            takeProfit: takeProfitPrice.toString(),
-                            stopLoss: stopLossPrice.toString()
+                            ...buildTpSl(true)
                         });
                         console.log('加仓结果:', order);
                         return {
@@ -369,8 +384,7 @@ class BybitFuturesTrader {
                         orderType: 'Market',
                         qty: quantity.toString(),
                         positionIdx: 0,
-                        takeProfit: takeProfitPrice.toString(),
-                        stopLoss: stopLossPrice.toString()
+                        ...buildTpSl(false)
                     });
                     console.log('开仓结果:', order);
                     return {

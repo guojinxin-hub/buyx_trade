@@ -203,10 +203,11 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                             symbol,
                             maxVolume: Number(userOptions.maxVolume),
                             upl: Number(position.body.unrealised_pnl) || 0,
-                            exchange: 'gate'
+                            exchange: 'gate',
+                            direction
                         });
                         if (decision) {
-                            await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions, decision.addUsdt);
+                            await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions, decision.addUsdt, true);
                         } else {
                             console.log(`Gate ${symbol} 不满足加仓条件，跳过加仓`)
                         }
@@ -223,7 +224,8 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
 }
 
 // 下单（usdtAmount：下单资金，同向加仓时由加仓规则传入，入场/反手时不传则用原始单资金 maxVolume）
-const createOrder = async (futuresApi, futureContractData, settle, symbol, direction, userOptions, usdtAmount) => {
+// isAddPosition：是否为同向加仓。加仓时保留原有止盈止损条件单（size=0 全仓平仓，天然覆盖新增仓位），不重挂
+const createOrder = async (futuresApi, futureContractData, settle, symbol, direction, userOptions, usdtAmount, isAddPosition = false) => {
     try {
         console.log("Gate下单", userOptions.userId)
         const orderUsdt = Number(usdtAmount) || Number(userOptions.maxVolume)
@@ -268,18 +270,20 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                     const price = formatPrice(lossPrice, findFutureContract.orderPriceRound)
                     await new Promise(resolve => setTimeout(resolve, 200));
                     
-                    // 6.1 清除该合约旧的止盈止损条件单 (避免重复挂单)
-                    const priceTriggeredOrder = await futuresApi.listPriceTriggeredOrders(settle, "open", {
-                        contract: `${symbol}_USDT`,
-                    })
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                    if (priceTriggeredOrder.body.length > 0) {
-                        await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`})
+                    // 6.1 清除该合约旧的止盈止损条件单 (避免重复挂单)；加仓时保留原条件单，不清理
+                    if (!isAddPosition) {
+                        const priceTriggeredOrder = await futuresApi.listPriceTriggeredOrders(settle, "open", {
+                            contract: `${symbol}_USDT`,
+                        })
                         await new Promise(resolve => setTimeout(resolve, 200));
+                        if (priceTriggeredOrder.body.length > 0) {
+                            await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`})
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        }
                     }
                     
-                    // 6.2 创建止损条件单 (条件单类型为平仓)
-                    if (Number(price) > 0) {
+                    // 6.2 创建止损条件单 (条件单类型为平仓)；加仓不重挂
+                    if (!isAddPosition && Number(price) > 0) {
                         await futuresApi.createPriceTriggeredOrder(settle, {
                             initial: {
                                 contract: `${symbol}_USDT`,
@@ -299,8 +303,8 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                         })
                     }
                     
-                    // 7. 计算止盈价格并挂单 (如果用户配置了止盈)
-                    if (userOptions.takeProfit) {
+                    // 7. 计算止盈价格并挂单 (如果用户配置了止盈)；加仓不重挂
+                    if (!isAddPosition && userOptions.takeProfit) {
                         await new Promise(resolve => setTimeout(resolve, 200));
                         // 买入止盈价 = 成交价 * (1 + 止盈百分比%)
                         // 卖出止盈价 = 成交价 * (1 - 止盈百分比%)

@@ -92,7 +92,8 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
                         upl: positionUplMap[item.symbol],
-                        exchange: 'bybit'
+                        exchange: 'bybit',
+                        direction: item.direction
                     });
                     if (!decision) {
                         continue;

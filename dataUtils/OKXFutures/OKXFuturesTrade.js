@@ -390,19 +390,34 @@ class OKXFuturesTrader {
                 } else if (currentPosition.pos > 0 && direction === "buy" || currentPosition.pos < 0 && direction === "sell") {
                     // 同向持仓：加仓资金与次数已由包装层按加仓规则决定，此处直接加仓
                     if (settingDirection === "all" || direction === settingDirection) {
-                        console.log('同向持仓，执行加仓');
+                        console.log('同向持仓，执行加仓（沿用原有止盈止损价位）');
+                        // 沿用该仓位已有条件单的触发价，只把新增仓位覆盖上，
+                        // 避免按加仓价重算把原止损整体挪走
+                        let addAttachAlgoOrds;
+                        try {
+                            const algos = await this.client.getAlgoOrders(instId);
+                            const old = algos.find(o => (o.slTriggerPx && Number(o.slTriggerPx) > 0) || (o.tpTriggerPx && Number(o.tpTriggerPx) > 0));
+                            if (old) {
+                                addAttachAlgoOrds = {};
+                                if (old.slTriggerPx && Number(old.slTriggerPx) > 0) {
+                                    addAttachAlgoOrds.slTriggerPx = Number(old.slTriggerPx);
+                                    addAttachAlgoOrds.slOrdPx = -1;
+                                    addAttachAlgoOrds.slTriggerPxType = old.slTriggerPxType || 'last';
+                                }
+                                if (old.tpTriggerPx && Number(old.tpTriggerPx) > 0) {
+                                    addAttachAlgoOrds.tpTriggerPx = Number(old.tpTriggerPx);
+                                    addAttachAlgoOrds.tpOrdPx = -1;
+                                    addAttachAlgoOrds.tpTriggerPxType = old.tpTriggerPxType || 'last';
+                                }
+                            }
+                        } catch (e) {
+                            console.log('OKX 读取原止盈止损失败，本次加仓不附加止盈止损:', e.message);
+                        }
                         order = await this.client.placeOrderWithUsdt({
                             instId,
                             side: direction,
                             size: size, // 100 USDT
-                            attachAlgoOrds: {
-                                slTriggerPx: stopLossPrice, // 止损触发价
-                                slOrdPx: -1, // -1表示市价止损
-                                slTriggerPxType: 'last', // 最新价触发
-                                tpOrdPx: -1, // 止盈价
-                                tpTriggerPx: takeProfitPrice, // 止盈价
-                                tpTriggerPxType: 'last',
-                            }
+                            attachAlgoOrds: addAttachAlgoOrds
                         });
                     }
                 }

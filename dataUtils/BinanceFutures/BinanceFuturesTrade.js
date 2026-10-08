@@ -65,14 +65,14 @@ class BinanceFuturesTrader {
     /**
      * 计算交易数量
      */
-    async calculateQuantity(symbolInfo, usdtAmount, currentPrice) {
+    async calculateQuantity(symbolInfo, usdtAmount, currentPrice, leverage = 1) {
         try {
             // 获取数量精度
             const quantityFilter = symbolInfo.filters.find(f => f.filterType === 'LOT_SIZE');
             const stepSize = parseFloat(quantityFilter.stepSize);
 
-            // 计算数量并调整到合适的精度
-            let quantity = usdtAmount / currentPrice;
+            // 与 Gate/OKX/Bybit/Bitget 口径统一：usdtAmount 为名义资金，实际下单量 = 资金 × 杠杆 / 价格
+            let quantity = (usdtAmount * leverage) / currentPrice;
             quantity = Math.floor(quantity / stepSize) * stepSize;
             quantity = quantity.toFixed(symbolInfo.quantityPrecision);
             return quantity
@@ -157,6 +157,15 @@ class BinanceFuturesTrader {
             const symbol = symbolInfo.symbol;
             const priceStep = symbolInfo.filters.find(f => f.filterType === 'PRICE_FILTER').tickSize;
             const results = {};
+
+            // 重挂前先撤销该合约已有的条件单：币安对"同方向已有 closePosition 全仓条件单"
+            // 会直接拒单（An open stop or take profit order with closePosition ... is existing）
+            try {
+                await this.cancelAllAlgoOrders(symbol);
+                await new Promise(resolve => setTimeout(resolve, 300));
+            } catch (e) {
+                console.log('撤销旧条件单失败(忽略):', e.message);
+            }
 
             // 计算止盈止损价格
             let takeProfitPrice, stopLossPrice;
@@ -268,7 +277,7 @@ class BinanceFuturesTrader {
             const currentPrice = await retryRequest(() => this.client.getCurrentPrice(symbol));
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            const quantity = await this.calculateQuantity(symbolInfo, usdtAmount, currentPrice);
+            const quantity = await this.calculateQuantity(symbolInfo, usdtAmount, currentPrice, leverage);
             await new Promise(resolve => setTimeout(resolve, 50));
 
             console.log(`当前价格: ${currentPrice}, 计算数量: ${quantity}`);
@@ -281,6 +290,7 @@ class BinanceFuturesTrader {
             const currentPosition = await retryRequest(() => this.getCurrentPosition(symbol));
             await new Promise(resolve => setTimeout(resolve, 50));
 
+            let isAddPosition = false; // 同向持仓 = 加仓
             if (currentPosition) {
                 const currentDirection = currentPosition.positionSide;
                 if ((currentDirection === 'LONG' && direction === 'SHORT') ||
@@ -288,6 +298,8 @@ class BinanceFuturesTrader {
                     console.log(`发现反向持仓，先平仓: ${currentDirection}`);
                     await this.closePosition(symbol);
                     await new Promise(resolve => setTimeout(resolve, 50));
+                } else {
+                    isAddPosition = true;
                 }
             }
 
@@ -319,17 +331,28 @@ class BinanceFuturesTrader {
                 //     console.log(`订单详情: 均价=${filledPrice}, 数量=${filledQuantity}, 状态=${orderInfo.status}`);
                 // }
 
-                // 7. 设置止盈止损 - 使用实际成交价格和数量
-                const tpSlResults = await this.setTakeProfitAndStopLoss(
-                    symbolInfo,
-                    filledPrice,
-                    filledQuantity,
-                    takeProfitPercent,
-                    stopLossPercent,
-                    direction,
-                );
-
-                console.log('交易完成，止盈止损已设置');
+                // 7. 止盈止损
+                let tpSlResults = null;
+                if (isAddPosition) {
+                    // 加仓：保留原仓位的止盈止损（币安 closePosition 全仓条件单天然覆盖新增仓位）。
+                    // 不重挂既能避免 closePosition 冲突报错，也避免把原止损按加仓价整体挪走
+                    console.log('加仓：保留原有止盈止损，不重挂');
+                } else {
+                    try {
+                        tpSlResults = await this.setTakeProfitAndStopLoss(
+                            symbolInfo,
+                            filledPrice,
+                            filledQuantity,
+                            takeProfitPercent,
+                            stopLossPercent,
+                            direction,
+                        );
+                        console.log('止盈止损已设置');
+                    } catch (e) {
+                        // 市价单已成交，止盈止损挂失败不能丢失交易记录
+                        console.error('止盈止损设置失败（下单已成交，保留交易记录）:', e.message);
+                    }
+                }
                 await new Promise(resolve => setTimeout(resolve, 100));
 
                 return {
