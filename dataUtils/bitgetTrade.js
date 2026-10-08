@@ -67,7 +67,7 @@ export const bitgetTrade = async ({tradeData, userOptions}) => {
             const {direction, insurance, maxVolume, leverage, stopLoss, takeProfit} = userOptions;
             const accountBalance = await trader.getAccountInfo();
             console.log("accountBalance",accountBalance)
-            await saveUserBalance(userOptions.userId, accountBalance.balance);
+            await saveUserBalance(userOptions.userId, accountBalance.balance, userOptions.belong);
 
             // 获取当前持仓并构建映射 {symbol: direction} 和盈亏映射 {symbol: upl}
             const positions = await trader.getPositions();
@@ -92,7 +92,8 @@ export const bitgetTrade = async ({tradeData, userOptions}) => {
                         userId: userOptions.userId,
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
-                        upl: positionUplMap[item.symbol]
+                        upl: positionUplMap[item.symbol],
+                        exchange: 'bitget'
                     });
                     if (!decision) {
                         continue;
@@ -265,7 +266,8 @@ export const bitgetLeaderTrade = async ({tradeData, userOptions}) => {
                         userId: userOptions.userId,
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
-                        upl: positionUplMap[item.symbol]
+                        upl: positionUplMap[item.symbol],
+                        exchange: 'bitget_leader'
                     });
                     if (!decision) {
                         continue;

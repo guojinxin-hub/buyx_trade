@@ -138,7 +138,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
         if (userOptions.isActive) {
             // 5.1 获取并保存账户余额
             const futureAccount = await futuresApi.listFuturesAccounts(settle)
-            await saveUserBalance(userOptions.userId, futureAccount.body)
+            await saveUserBalance(userOptions.userId, futureAccount.body, userOptions.belong)
             
             // 5.2 检查并修改持仓模式（设置为单向持仓）
             let inDualMode = futureAccount.body.inDualMode
@@ -202,7 +202,8 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                             userId: userOptions.userId,
                             symbol,
                             maxVolume: Number(userOptions.maxVolume),
-                            upl: Number(position.body.unrealised_pnl) || 0
+                            upl: Number(position.body.unrealised_pnl) || 0,
+                            exchange: 'gate'
                         });
                         if (decision) {
                             await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions, decision.addUsdt);

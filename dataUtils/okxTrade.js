@@ -40,7 +40,7 @@ export const okxTrade = async ({tradeData, userOptions}) => {
             // 获取用户的账户余额
             const accountBalance = await trader.getAccountInfo()
             await new Promise(resolve => setTimeout(resolve, 100));
-            await saveUserBalance(userOptions.userId, accountBalance.balance)
+            await saveUserBalance(userOptions.userId, accountBalance.balance, userOptions.belong)
             // 修改持仓模式为单向持仓
             const positionMode = await trader.getPositionMode()
             if (positionMode.posMode !== 'net_mode') {
@@ -71,7 +71,8 @@ export const okxTrade = async ({tradeData, userOptions}) => {
                         userId: userOptions.userId,
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
-                        upl: positionUplMap[item.symbol]
+                        upl: positionUplMap[item.symbol],
+                        exchange: 'okx'
                     });
                     if (!decision) {
                         continue;

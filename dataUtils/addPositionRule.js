@@ -57,14 +57,18 @@ const loadAddPositionConfig = async () => {
  * @param {String} params.symbol 币种（如 BTC）
  * @param {Number} params.maxVolume 原始单资金（USDT）
  * @param {Number} params.upl 当前持仓未实现盈亏（>0 视为盈利单）
+ * @param {String} [params.exchange] 交易所（小写：gate/binance/bybit/okx/bitget...），用于按交易所隔离计数
  * @returns {Promise<Object|null>} null=不加仓（今日已交易过/已达上限/异常）；否则 { addUsdt, addCount, isProfit }
  */
-export const getAddPositionDecision = async ({ userId, symbol, maxVolume, upl }) => {
+export const getAddPositionDecision = async ({ userId, symbol, maxVolume, upl, exchange }) => {
     try {
+        // 计数必须按交易所隔离：同一用户在多交易所可能持有同一币种，
+        // 不隔离会导致其它交易所的记录把本交易所的加仓次数/当日次数占满（表现为无法加仓）
+        const baseQuery = { userId, symbol, ...(exchange ? { exchange } : {}) };
+
         // 规则1：入场当日不加仓，同个币种每日只入场(加仓)1次
         const todayCount = await TradeRecordModel.countDocuments({
-            userId,
-            symbol,
+            ...baseQuery,
             createdAt: { $gte: moment().startOf('day').toDate() }
         });
         if (todayCount > 0) {
@@ -76,7 +80,7 @@ export const getAddPositionDecision = async ({ userId, symbol, maxVolume, upl })
         const { maxAddPositionCount, lossRatios, profitRatios } = await loadAddPositionConfig();
 
         // 规则2：每个币种最多加仓 maxAddPositionCount 次
-        const pendingCount = await TradeRecordModel.countDocuments({ userId, symbol, status: 'pending' });
+        const pendingCount = await TradeRecordModel.countDocuments({ ...baseQuery, status: 'pending' });
         const addCount = Math.max(0, pendingCount - 1);
         if (addCount >= maxAddPositionCount) {
             console.log(`[加仓规则] ${symbol} 已加仓 ${addCount} 次，达到上限 ${maxAddPositionCount} 次，不再加仓`);

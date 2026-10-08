@@ -272,8 +272,10 @@ class BinanceFuturesTrader {
             await new Promise(resolve => setTimeout(resolve, 50));
 
             console.log(`当前价格: ${currentPrice}, 计算数量: ${quantity}`);
-            if (quantity == '0') {
-                return
+            // 数量按精度向下取整为 0（下单金额相对价格过小）时返回失败结果，
+            // 不能直接 return undefined——调用方会读取 result.success 抛异常并中断该轮剩余币种的下单
+            if (Number(quantity) === 0) {
+                return { success: false, error: '计算下单数量为0，跳过该币种' }
             }
             // 4. 检查当前持仓并平仓（如果需要）
             const currentPosition = await retryRequest(() => this.getCurrentPosition(symbol));

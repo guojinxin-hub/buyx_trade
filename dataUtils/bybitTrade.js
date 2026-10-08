@@ -58,7 +58,7 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
             const accountBalance = await trader.getAccountInfo();
             await new Promise(resolve => setTimeout(resolve, 100));
 
-            await saveUserBalance(userOptions.userId, accountBalance.balance);
+            await saveUserBalance(userOptions.userId, accountBalance.balance, userOptions.belong);
             // 设置单向持仓失败（如已有持仓/挂单无法切换，账号本就在单向模式）不应中断入场
             try {
                 await trader.setPositionMode(0);
@@ -91,7 +91,8 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
                         userId: userOptions.userId,
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
-                        upl: positionUplMap[item.symbol]
+                        upl: positionUplMap[item.symbol],
+                        exchange: 'bybit'
                     });
                     if (!decision) {
                         continue;

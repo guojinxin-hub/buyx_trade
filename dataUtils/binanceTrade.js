@@ -46,7 +46,7 @@ export const binanceTrade = async ({ tradeData, userOptions }) => {
                 unrealisedPnl: totalUnrealizedProfit,
                 available: availableBalance
             }
-            await saveUserBalance(userOptions.userId, accountFunds)
+            await saveUserBalance(userOptions.userId, accountFunds, userOptions.belong)
 
             // 构建当前持仓映射 {symbol: direction} 和盈亏映射 {symbol: upl}
             const positionMap = {};
@@ -70,7 +70,8 @@ export const binanceTrade = async ({ tradeData, userOptions }) => {
                         userId: userOptions.userId,
                         symbol: item.symbol,
                         maxVolume: Number(maxVolume),
-                        upl: positionUplMap[item.symbol]
+                        upl: positionUplMap[item.symbol],
+                        exchange: 'binance'
                     });
                     if (!decision) {
                         continue;

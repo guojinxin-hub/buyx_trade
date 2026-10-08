@@ -103,10 +103,13 @@ export const postRecommendData = async (req, res) => {
                     }
                 }
 
-                // 5.2 获取用户今日已交易的币种（去重）
-                // 注意：saveTradeRecord 写入的是 userOptions.userId（users 表 ObjectId），此处必须一致
+                // 5.2 获取用户今日已交易的币种（去重，必须按交易所隔离）
+                // 注意：saveTradeRecord 写入的是 userOptions.userId（users 表 ObjectId）与 exchange(小写)，此处必须一致
+                // 若不带 exchange，同一用户多交易所会互相"吃掉"信号：靠前处理的配置把币种占完，
+                // 靠后处理的配置（如 Binance/Bybit）当日再也拿不到该币种，表现为"无法入场"
                 const tradedSymbols = await TradeRecordModel.find({
                     userId: option.userId,
+                    exchange: option.belong.toLowerCase(),
                     createdAt: {$gte: moment().startOf('day').toDate()},
                 }).distinct('symbol');
 

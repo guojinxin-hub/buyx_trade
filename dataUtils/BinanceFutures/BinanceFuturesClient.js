@@ -183,10 +183,20 @@ class BinanceFuturesClient {
 
     // 设置杠杆
     async setLeverage(symbol, leverage) {
-        return this._sendRequest('POST', '/fapi/v1/leverage', {
-            symbol,
-            leverage
-        }, true);
+        try {
+            return await this._sendRequest('POST', '/fapi/v1/leverage', {
+                symbol,
+                leverage
+            }, true);
+        } catch (error) {
+            // -4046: No need to change leverage（当前杠杆已等于目标值）。
+            // 合约已是对应杠杆时该错误必然出现，不能因此中断下单
+            if (error.message.includes('-4046') || error.message.includes('No need to change leverage')) {
+                console.log(`${symbol} 杠杆已是 ${leverage}x，无需修改`);
+                return { symbol, leverage };
+            }
+            throw error;
+        }
     }
 
     // 获取订单信息

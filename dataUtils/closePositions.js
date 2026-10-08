@@ -104,7 +104,7 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
         
         // 获取账户余额
         const futureAccount = await retryRequest(() => futuresApi.listFuturesAccounts(settle));
-        await saveUserBalance(userOptions.userId, futureAccount.body);
+        await saveUserBalance(userOptions.userId, futureAccount.body, userOptions.belong);
         
         let symbolsToClose = [];
         
@@ -190,7 +190,7 @@ export const executeBinanceClosePositions = async ({tradeData, userOptions}) => 
             unrealisedPnl: accountInfo.totalUnrealizedProfit,
             available: accountInfo.availableBalance
         };
-        await saveUserBalance(userOptions.userId, accountFunds);
+        await saveUserBalance(userOptions.userId, accountFunds, userOptions.belong);
         
         let symbolsToClose = [];
         
@@ -258,7 +258,7 @@ export const executeOKXClosePositions = async ({tradeData, userOptions}) => {
             unrealisedPnl: accountInfo.balance.unrealisedPnl,
             available: accountInfo.balance.available
         };
-        await saveUserBalance(userOptions.userId, accountFunds);
+        await saveUserBalance(userOptions.userId, accountFunds, userOptions.belong);
         
         let symbolsToClose = [];
         
@@ -326,7 +326,7 @@ export const executeBitgetClosePositions = async ({tradeData, userOptions}) => {
             unrealisedPnl: accountInfo.balance.unrealisedPnl,
             available: accountInfo.balance.available
         };
-        await saveUserBalance(userOptions.userId, accountFunds);
+        await saveUserBalance(userOptions.userId, accountFunds, userOptions.belong);
         
         let symbolsToClose = [];
         
@@ -408,7 +408,7 @@ export const executeBitgetLeaderClosePositions = async ({tradeData, userOptions}
                 unrealisedPnl: accountInfo?.unrealisedPnl ?? accountInfo?.usdtUnrealisedPnl ?? accountInfo?.btcUnrealizedPnl ?? '0',
                 available: accountInfo?.available ?? accountInfo?.assets?.find(asset => asset.coin === 'USDT')?.available ?? '0'
             };
-            await saveUserBalance(userOptions.userId, accountFunds);
+            await saveUserBalance(userOptions.userId, accountFunds, userOptions.belong);
         } catch (e) {
             console.log('获取账户信息失败，继续执行平仓操作:', e.message);
         }
@@ -503,7 +503,7 @@ export const executeBybitClosePositions = async ({tradeData, userOptions}) => {
             unrealisedPnl: accountInfo.balance?.unrealisedPnl?.toString() || '0',
             available: accountInfo.balance?.available?.toString() || '0'
         };
-        await saveUserBalance(userOptions.userId, accountFunds);
+        await saveUserBalance(userOptions.userId, accountFunds, userOptions.belong);
 
         let symbolsToClose = [];
 
