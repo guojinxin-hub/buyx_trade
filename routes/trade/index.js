@@ -2,6 +2,7 @@ import express from "express";
 import { postRecommendData } from "./postRecommendData";
 import { closePositions } from "./closePositions";
 import { closeReversePositions } from "./closeReversePositions";
+import { closeDirectionalProfitPositions } from "./closeDirectionalProfitPositions";
 import { closeAllPositions } from "./closeAllPositions";
 import { syncPositions } from "./syncPositions";
 import { handleProfitProtection } from '../../dataUtils/profitProtection';
@@ -11,6 +12,7 @@ export const tradeRoute = express.Router();
 tradeRoute.post('/postRecommendData', postRecommendData)
 tradeRoute.post('/closePositions', closePositions)
 tradeRoute.post('/closeReversePositions', closeReversePositions)
+tradeRoute.post('/closeDirectionalProfitPositions', closeDirectionalProfitPositions)
 tradeRoute.post('/closeAllPositions', closeAllPositions)
 tradeRoute.post('/sync-positions', syncPositions)
 
