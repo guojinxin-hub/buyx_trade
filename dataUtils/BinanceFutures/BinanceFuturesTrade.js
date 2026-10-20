@@ -253,10 +253,23 @@ class BinanceFuturesTrader {
             takeProfitPercent,
             stopLossPercent,
             symbolInfo,
-            settingDirection
+            settingDirection,
+            limitPrice,
+            entryType = 'market'
         } = params;
         try {
-            console.log(`开始执行交易: ${symbol}, 方向: ${direction}, 金额: ${usdtAmount} USDT`);
+            const isLimitEntry = entryType === 'limit';
+            console.log(`开始执行交易: ${symbol}, 方向: ${direction}, 金额: ${usdtAmount} USDT, 形式: ${isLimitEntry ? '限价' : '市价'}, 委托价: ${limitPrice}`);
+
+            // 限价单价格精度
+            let formattedLimitPrice = null;
+            if (isLimitEntry) {
+                const priceStep = symbolInfo.filters.find(f => f.filterType === 'PRICE_FILTER').tickSize;
+                formattedLimitPrice = Number(formatPrice(limitPrice, Number(priceStep)));
+                if (!formattedLimitPrice || formattedLimitPrice <= 0) {
+                    return { success: false, error: '缺少有效委托价，跳过该币种' };
+                }
+            }
 
             // 1. 检查保证金
             if (!await this.checkMargin(symbol, usdtAmount, minMargin)) {
@@ -273,14 +286,16 @@ class BinanceFuturesTrader {
             console.log(`设置杠杆: ${leverage}x`);
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            // 3. 获取当前价格和计算数量
-            const currentPrice = await retryRequest(() => this.client.getCurrentPrice(symbol));
+            // 3. 计算数量：限价单按委托价，市价单按当前价（口径：资金 × 杠杆 / 价格）
+            const priceForSize = isLimitEntry
+                ? formattedLimitPrice
+                : await retryRequest(() => this.client.getCurrentPrice(symbol));
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            const quantity = await this.calculateQuantity(symbolInfo, usdtAmount, currentPrice, leverage);
+            const quantity = await this.calculateQuantity(symbolInfo, usdtAmount, priceForSize, leverage);
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            console.log(`当前价格: ${currentPrice}, 计算数量: ${quantity}`);
+            console.log(`委托价/现价: ${priceForSize}, 计算数量: ${quantity}`);
             // 数量按精度向下取整为 0（下单金额相对价格过小）时返回失败结果，
             // 不能直接 return undefined——调用方会读取 result.success 抛异常并中断该轮剩余币种的下单
             if (Number(quantity) === 0) {
@@ -304,63 +319,49 @@ class BinanceFuturesTrader {
             }
 
             if (settingDirection === 'all' || settingDirection === direction) {
-                // 5. 执行市价单
                 const orderSide = direction === 'LONG' ? 'BUY' : 'SELL';
-                const orderResult = await retryRequest(() => this.client.placeMarketOrder(symbol, orderSide, quantity));
-                console.log('下单成功:', orderResult);
+                let orderResult;
+
+                if (isLimitEntry) {
+                    // 5a. 限价单（GTC 一直有效，24小时未成交由 limitEntryManager 撤单）
+                    orderResult = await retryRequest(() => this.client.placeLimitOrder(symbol, orderSide, quantity, formattedLimitPrice, 'GTC'));
+                    console.log('限价单已挂出:', orderResult);
+                } else {
+                    // 5b. 市价单（顺势策略，突破即入场）
+                    orderResult = await retryRequest(() => this.client.placeMarketOrder(symbol, orderSide, quantity));
+                    console.log('市价单已成交:', orderResult);
+                }
                 await new Promise(resolve => setTimeout(resolve, 50));
 
-                // 6. 获取成交均价和实际数量
-                let filledPrice = currentPrice;
-                let filledQuantity = quantity;
-
-                // if (orderResult.orderId) {
-                //     // 等待订单完全成交
-                //     await new Promise(resolve => setTimeout(resolve, 2000));
-                //
-                //     // 获取订单详情
-                //     const orderInfo = await this.client.getOrder(symbol, orderResult.orderId);
-                //     console.log('订单详情:', orderInfo);
-                //     filledPrice = parseFloat(orderInfo.avgPrice) || currentPrice;
-                //
-                //     // 获取实际成交数量
-                //     if (orderInfo.executedQty) {
-                //         filledQuantity = parseFloat(orderInfo.executedQty);
-                //     }
-                //
-                //     console.log(`订单详情: 均价=${filledPrice}, 数量=${filledQuantity}, 状态=${orderInfo.status}`);
-                // }
-
-                // 7. 止盈止损
-                let tpSlResults = null;
-                if (isAddPosition) {
-                    // 加仓：保留原仓位的止盈止损（币安 closePosition 全仓条件单天然覆盖新增仓位）。
-                    // 不重挂既能避免 closePosition 冲突报错，也避免把原止损按加仓价整体挪走
-                    console.log('加仓：保留原有止盈止损，不重挂');
-                } else {
+                // 6. 止盈止损
+                //    - 市价单已成交：立即按成交价挂止盈止损（与旧逻辑一致）
+                //    - 限价单可能不成交，交易所不允许无持仓挂平仓条件单，成交后由 limitEntryManager 补挂
+                let protectionOk = true;
+                if (!isLimitEntry && !isAddPosition) {
                     try {
-                        tpSlResults = await this.setTakeProfitAndStopLoss(
+                        await this.setTakeProfitAndStopLoss(
                             symbolInfo,
-                            filledPrice,
-                            filledQuantity,
+                            priceForSize,
+                            quantity,
                             takeProfitPercent,
                             stopLossPercent,
                             direction,
                         );
                         console.log('止盈止损已设置');
                     } catch (e) {
-                        // 市价单已成交，止盈止损挂失败不能丢失交易记录
-                        console.error('止盈止损设置失败（下单已成交，保留交易记录）:', e.message);
+                        protectionOk = false;
+                        console.error('市价入场后止盈止损设置失败（保留交易记录）:', e.message);
                     }
                 }
-                await new Promise(resolve => setTimeout(resolve, 100));
 
                 return {
                     success: true,
                     order: orderResult,
-                    filledPrice,
-                    filledQuantity,
-                    takeProfitStopLoss: tpSlResults
+                    filledPrice: isLimitEntry ? formattedLimitPrice : priceForSize,
+                    filledQuantity: quantity,
+                    isAddPosition,
+                    orderType: isLimitEntry ? 'limit' : 'market',
+                    entryFilled: !isLimitEntry && (isAddPosition || protectionOk)
                 };
             } else {
                 return {
@@ -374,6 +375,46 @@ class BinanceFuturesTrader {
                 error: error.message
             };
         }
+    }
+
+    /**
+     * 限价入场单成交后补挂止盈止损
+     * @param {Object} params
+     * @param {string} params.symbol - 交易对（含USDT）
+     * @param {string} params.direction - LONG / SHORT
+     * @param {string|number} params.entryPrice - 实际持仓均价
+     * @param {number} params.takeProfitPercent - 止盈百分比
+     * @param {number} params.stopLossPercent - 止损百分比
+     * @returns {Promise<Object>}
+     */
+    async placeEntryProtection({symbol, direction, entryPrice, takeProfitPercent, stopLossPercent}) {
+        const symbols = await this.getSymbolInfo();
+        const symbolInfo = symbols.find(s => s.symbol === symbol);
+        if (!symbolInfo) {
+            throw new Error(`${symbol} 未找到交易对信息`);
+        }
+        return this.setTakeProfitAndStopLoss(
+            symbolInfo,
+            Number(entryPrice),
+            0,
+            Number(takeProfitPercent) || 0,
+            Number(stopLossPercent) || 0,
+            direction
+        );
+    }
+
+    /**
+     * 获取所有未成交挂单
+     */
+    async getOpenOrders() {
+        return retryRequest(() => this.client.getOpenOrders());
+    }
+
+    /**
+     * 撤销挂单
+     */
+    async cancelOrder(symbol, orderId) {
+        return retryRequest(() => this.client.cancelOrder(symbol, orderId));
     }
 
     /**

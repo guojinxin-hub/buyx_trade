@@ -254,9 +254,41 @@ class OKXClient {
             side: params.side,
             sz: params.size,
             ordType: params.ordType || 'market',
+            px: params.px, // 限价单价格
             tdMode: 'cross',
             attachAlgoOrds: params.attachAlgoOrds
         });
+    }
+
+    /**
+     * 获取当前未成交的普通委托（限价单）
+     * @param {string} [instId] - 产品ID，不传则查询全部SWAP挂单
+     * @returns {Promise<Array>} 委托列表
+     */
+    async getOpenOrders(instId) {
+        try {
+            const params = {instType: 'SWAP'};
+            if (instId) params.instId = instId;
+            const response = await this.client.get('/api/v5/trade/orders-pending', {params});
+            return response.data || [];
+        } catch (error) {
+            throw new Error(`Failed to get open orders: ${error.message}`);
+        }
+    }
+
+    /**
+     * 撤销普通委托
+     * @param {string} instId - 产品ID
+     * @param {string} ordId - 订单ID
+     * @returns {Promise<Object>}
+     */
+    async cancelOrder(instId, ordId) {
+        try {
+            const response = await this.client.post('/api/v5/trade/cancel-order', {instId, ordId});
+            return response.data ? response.data[0] : response;
+        } catch (error) {
+            throw new Error(`Failed to cancel order: ${error.message}`);
+        }
     }
 
     /**

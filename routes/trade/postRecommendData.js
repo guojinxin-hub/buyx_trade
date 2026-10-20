@@ -23,6 +23,7 @@ import moment from "moment";
 import {formatResponse} from "../../dataUtils/formatResponse";
 import {apiTrade, getUserPositions} from "../../dataUtils/apiTrade";
 import {executeClosePositions} from "../../dataUtils/closePositions";
+import {getLimitEntryPrice, LIMIT_ORDER_TTL_MS} from "../../dataUtils/limitEntryPrice";
 
 export const postRecommendData = async (req, res) => {
     try {
@@ -72,6 +73,31 @@ export const postRecommendData = async (req, res) => {
             }
         }
 
+        // 3.5 委托单：engine 已按策略写入委托形式
+        //     - 逆势策略（priceTrend/continuousFundFlow/cci）：entryType=limit，orderPrice=最近4日高低中值
+        //     - 顺势策略（fundFlowTrend/marketSignal）：entryType=market，允许突破入场
+        const orderRecommends = [];
+        for (const recommend of filteredRecommends) {
+            const entryType = recommend.entryType === 'limit' ? 'limit' : 'market';
+
+            if (entryType === 'market') {
+                orderRecommends.push({...recommend, entryType, limitPrice: null});
+                continue;
+            }
+
+            let limitPrice = Number(recommend.orderPrice);
+            if (!limitPrice || limitPrice <= 0) {
+                // 兜底：历史推荐没有写入委托价时按同一公式补算
+                limitPrice = await getLimitEntryPrice(recommend.symbol);
+            }
+            if (!limitPrice) {
+                console.warn(`币种 ${recommend.symbol} 为限价委托但缺少有效委托价，跳过下单`);
+                continue;
+            }
+            orderRecommends.push({...recommend, entryType, limitPrice});
+        }
+        console.log(`委托单生成完成：${orderRecommends.map(r => `${r.symbol}(${r.direction},${r.entryType}${r.limitPrice ? '@' + r.limitPrice.toFixed(6) : ''})`).join(', ') || '无'}`);
+
         // 4. 获取所有激活的用户交易配置
         const options = await UserTradeOptionsModel.find({
             isActive: true,
@@ -113,8 +139,24 @@ export const postRecommendData = async (req, res) => {
                     createdAt: {$gte: moment().startOf('day').toDate()},
                 }).distinct('symbol');
 
-                // 5.3 过滤掉今日已交易的币种
-                const tradeData = filteredRecommends.filter(item => !tradedSymbols.includes(item.symbol));
+                // 5.3 过滤掉今日已交易的币种，以及仍有未成交限价挂单的币种
+                //     限价单可能跨日仍挂着（24小时有效），不排除会重复挂单
+                const unfilledLimitSymbols = await TradeRecordModel.find({
+                    userId: option.userId,
+                    exchange: option.belong.toLowerCase(),
+                    orderType: 'limit',
+                    entryFilled: false,
+                    status: 'pending',
+                    createdAt: {$gte: moment().subtract(LIMIT_ORDER_TTL_MS, 'milliseconds').toDate()},
+                }).distinct('symbol');
+
+                const tradeData = orderRecommends.filter(item =>
+                    !tradedSymbols.includes(item.symbol) && !unfilledLimitSymbols.includes(item.symbol)
+                );
+
+                if (unfilledLimitSymbols.length > 0) {
+                    console.log(`用户 ${option.userId} 仍有未成交限价单的币种: ${unfilledLimitSymbols.join(', ')}`);
+                }
 
                 console.log(`用户 ${option.userId} 今日已交易币种: ${tradedSymbols.join(', ') || '无'}，待下单: ${tradeData.length}个`);
 

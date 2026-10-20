@@ -410,6 +410,44 @@ class BybitClient {
     }
 
     /**
+     * 获取未成交挂单
+     * @param {string} [symbol] - 产品ID，不传则查询全部USDT永续挂单
+     * @returns {Promise<Array>}
+     */
+    async getOpenOrders(symbol) {
+        try {
+            const params = {
+                category: 'linear',
+                settleCoin: 'USDT'
+            };
+            if (symbol) params.symbol = symbol;
+            const response = await this.client.get('/v5/order/realtime', { params });
+            return response.result.list || [];
+        } catch (error) {
+            throw new Error(`Failed to get open orders: ${error.message}`);
+        }
+    }
+
+    /**
+     * 撤销单个订单
+     * @param {string} symbol - 产品ID
+     * @param {string} orderId - 订单ID
+     * @returns {Promise<Object>}
+     */
+    async cancelOrder(symbol, orderId) {
+        try {
+            const response = await this.client.post('/v5/order/cancel', {
+                category: 'linear',
+                symbol: symbol,
+                orderId: orderId
+            });
+            return response.result;
+        } catch (error) {
+            throw new Error(`Failed to cancel order: ${error.message}`);
+        }
+    }
+
+    /**
      * 获取订单信息
      * @param {string} symbol - 产品ID
      * @param {string} [orderId] - 订单ID

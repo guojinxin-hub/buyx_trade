@@ -163,8 +163,8 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
             // 5.4 遍历处理每个交易信号
             for (const item of intersectionData) {
                 try {
-                    const {symbol, direction} = item
-                    console.log("Gate symbol: ", symbol, "direction: ", direction)
+                    const {symbol, direction, limitPrice, entryType} = item
+                    console.log("Gate symbol: ", symbol, "direction: ", direction, "entryType: ", entryType, "limitPrice: ", limitPrice)
                     
                     // 获取当前持仓
                     let position = null
@@ -176,7 +176,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                     console.log("position: ", position?.body)
                     // 逻辑 A: 没有持仓 -> 开仓
                     if (!position || (position && Number(position.body.size) === 0)) {
-                        await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
+                        await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions, null, false, limitPrice, entryType)
                     } 
                     // 逻辑 B: 持仓方向与信号相反 (如持多收到卖空信号) -> 反手 (先平后开)
                     else if (position && ((Number(position.body.size) < 0 && direction === "buy") || (Number(position.body.size) > 0 && direction === "sell"))) {
@@ -194,7 +194,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                         await new Promise(resolve => setTimeout(resolve, 200));
                         
                         // 3. 反手开新仓
-                        await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions)
+                        await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions, null, false, limitPrice, entryType)
                     } 
                     // 逻辑 C: 持仓方向与信号一致 -> 按加仓规则（每日1次/最多3次/按盈亏比例）决定加仓资金
                     else if (position && ((Number(position.body.size) > 0 && direction === "buy") || (Number(position.body.size) < 0 && direction === "sell"))) {
@@ -207,7 +207,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
                             direction
                         });
                         if (decision) {
-                            await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions, decision.addUsdt, true);
+                            await createOrder(futuresApi, futureContractData, settle, symbol, direction, userOptions, decision.addUsdt, true, limitPrice, entryType);
                         } else {
                             console.log(`Gate ${symbol} 不满足加仓条件，跳过加仓`)
                         }
@@ -224,11 +224,13 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
 }
 
 // 下单（usdtAmount：下单资金，同向加仓时由加仓规则传入，入场/反手时不传则用原始单资金 maxVolume）
+// entryType：'limit'=逆势策略限价挂单（最近4日高低中值，24小时未成交自动撤单）；'market'=顺势策略市价突破入场
 // isAddPosition：是否为同向加仓。加仓时保留原有止盈止损条件单（size=0 全仓平仓，天然覆盖新增仓位），不重挂
-const createOrder = async (futuresApi, futureContractData, settle, symbol, direction, userOptions, usdtAmount, isAddPosition = false) => {
+const createOrder = async (futuresApi, futureContractData, settle, symbol, direction, userOptions, usdtAmount, isAddPosition = false, limitPrice, entryType = 'market') => {
     try {
         console.log("Gate下单", userOptions.userId)
         const orderUsdt = Number(usdtAmount) || Number(userOptions.maxVolume)
+        const isLimitEntry = entryType === 'limit'
         
         // 1. 检查用户是否允许该方向的交易 (userOptions.direction 为 "all", "buy" 或 "sell")
         if ((userOptions.direction === "all") || userOptions.direction === direction) {
@@ -242,9 +244,21 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
             if (canTrade) {
                 // 3. 计算下单数量
                 const findFutureContract = futureContractData.find(item => item.name === `${symbol}_USDT`)
-                // 计算逻辑：(下单金额 / (合约乘数 * 标记价格)) * 杠杆倍数
+
+                // 限价委托必须带有效委托价；市价单使用标记价计算张数
+                let formattedLimitPrice = null
+                if (isLimitEntry) {
+                    formattedLimitPrice = formatPrice(limitPrice, findFutureContract.orderPriceRound)
+                    if (Number(formattedLimitPrice) <= 0) {
+                        console.log(`Gate ${symbol} 缺少有效委托价，跳过下单`)
+                        return
+                    }
+                }
+                const priceForSize = isLimitEntry ? formattedLimitPrice : Number(findFutureContract.markPrice)
+
+                // 计算逻辑：(下单金额 / (合约乘数 * 价格)) * 杠杆倍数
                 // 注意：这里计算的是张数
-                const size = Math.floor(orderUsdt / (Number(findFutureContract.quantoMultiplier) * Number(findFutureContract.markPrice)) * Number(userOptions.leverage))
+                const size = Math.floor(orderUsdt / (Number(findFutureContract.quantoMultiplier) * Number(priceForSize)) * Number(userOptions.leverage))
                 
                 if (size > 0) {
                     // 4. 设置杠杆
@@ -252,86 +266,29 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                     await futuresApi.updatePositionLeverage(settle, `${symbol}_USDT`, `${Math.min(userOptions.leverage, findFutureContract.leverageMax)}`, {})
                     await new Promise(resolve => setTimeout(resolve, 200));
                     
-                    // 5. 下市价单
+                    // 5. 下单：限价单 gtc 一直有效（24小时未成交由 limitEntryManager 撤单）；市价单 ioc
                     const createFuturesOrder = await futuresApi.createFuturesOrder(settle, {
                         contract: `${symbol}_USDT`,
                         size: direction === "buy" ? size : -size, // 买入为正，卖出为负
-                        price: 0, // 0 代表市价单
-                        tif: "ioc", // Immediate or Cancel (立即成交或取消)
+                        price: isLimitEntry ? formattedLimitPrice : 0,
+                        tif: isLimitEntry ? "gtc" : "ioc",
                     }, {})
-                    
-                    // 6. 计算止损价格并挂单
-                    // 买入止损价 = 成交价 * (1 - 止损百分比%)
-                    // 卖出止损价 = 成交价 * (1 + 止损百分比%)
-                    const lossPrice = direction === "buy" ? 
-                        `${(1 - (Number(userOptions.stopLoss) / 100)) * Number(createFuturesOrder.body.fillPrice)}` : 
-                        `${(1 + (Number(userOptions.stopLoss) / 100)) * Number(createFuturesOrder.body.fillPrice)}`
-                    
-                    const price = formatPrice(lossPrice, findFutureContract.orderPriceRound)
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                    
-                    // 6.1 清除该合约旧的止盈止损条件单 (避免重复挂单)；加仓时保留原条件单，不清理
-                    if (!isAddPosition) {
-                        const priceTriggeredOrder = await futuresApi.listPriceTriggeredOrders(settle, "open", {
-                            contract: `${symbol}_USDT`,
-                        })
-                        await new Promise(resolve => setTimeout(resolve, 200));
-                        if (priceTriggeredOrder.body.length > 0) {
-                            await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`})
-                            await new Promise(resolve => setTimeout(resolve, 200));
-                        }
-                    }
-                    
-                    // 6.2 创建止损条件单 (条件单类型为平仓)；加仓不重挂
-                    if (!isAddPosition && Number(price) > 0) {
-                        await futuresApi.createPriceTriggeredOrder(settle, {
-                            initial: {
-                                contract: `${symbol}_USDT`,
-                                size: 0, // 0 表示平掉当前所有持仓
-                                price: "0", // 触发后的委托价格，0 表示市价
-                                reduceOnly: true, // 只减仓
-                                close: true,
-                                tif: "ioc",
-                            },
-                            trigger: {
-                                strategyType: 0, // 策略类型 0
-                                priceType: 0, // 价格类型 0 (标记价格)
-                                price: price, // 触发价格
-                                rule: direction === "buy" ? 2 : 1 // 规则: 买入时止损触发规则为 2 (低于), 卖出时为 1 (高于)
-                            },
-                            orderType: direction === "buy" ? "close-long-position" : "close-short-position", // 订单类型
-                        })
-                    }
-                    
-                    // 7. 计算止盈价格并挂单 (如果用户配置了止盈)；加仓不重挂
-                    if (!isAddPosition && userOptions.takeProfit) {
-                        await new Promise(resolve => setTimeout(resolve, 200));
-                        // 买入止盈价 = 成交价 * (1 + 止盈百分比%)
-                        // 卖出止盈价 = 成交价 * (1 - 止盈百分比%)
-                        const profitPrice = direction === "buy" ? 
-                            `${(1 + (Number(userOptions.takeProfit) / 100)) * Number(createFuturesOrder.body.fillPrice)}` : 
-                            `${(1 - (Number(userOptions.takeProfit) / 100)) * Number(createFuturesOrder.body.fillPrice)}`
-                        
-                        const price = formatPrice(profitPrice, findFutureContract.orderPriceRound)
-                        
-                        if (Number(price) > 0) {
-                            await futuresApi.createPriceTriggeredOrder(settle, {
-                                initial: {
-                                    contract: `${symbol}_USDT`,
-                                    size: 0,
-                                    price: "0",
-                                    reduceOnly: true,
-                                    tif: "ioc",
-                                    close: true,
-                                },
-                                trigger: {
-                                    strategyType: 0,
-                                    priceType: 0,
-                                    price: price,
-                                    rule: direction === "buy" ? 1 : 2 // 规则: 买入时止盈触发规则为 1 (高于), 卖出时为 2 (低于)
-                                },
-                                orderType: direction === "buy" ? "close-long-position" : "close-short-position",
+
+                    // 6. 止盈止损
+                    //    - 市价单立即成交：直接按成交价挂止盈止损（与旧逻辑一致）
+                    //    - 限价单可能不成交：交易所不允许无持仓挂平仓条件单，成交后由 limitEntryManager 补挂
+                    if (!isLimitEntry && !isAddPosition) {
+                        try {
+                            await placeGateProtection({
+                                userOptions,
+                                symbol,
+                                direction,
+                                entryPrice: Number(createFuturesOrder.body.fillPrice),
+                                futuresApi,
+                                contract: findFutureContract
                             })
+                        } catch (e) {
+                            console.error(`Gate ${symbol} 市价入场后挂止盈止损失败:`, e.message)
                         }
                     }
 
@@ -340,13 +297,17 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
                         try {
                             await saveTradeRecord(userOptions.userId, {
                                 symbol: `${symbol}`,
-                                price: String(createFuturesOrder.body.fillPrice),
+                                price: isLimitEntry ? String(formattedLimitPrice) : String(createFuturesOrder.body.fillPrice),
                                 size: String(Math.abs(size)),
                                 direction: direction,
                                 exchange: 'gate',
                                 orderId: createFuturesOrder.body.id,
                                 leverage: String(Math.min(userOptions.leverage, findFutureContract.leverageMax)),
-                                status: 'pending'  // 先设为待处理状态
+                                status: 'pending',  // 先设为待处理状态
+                                orderType: isLimitEntry ? 'limit' : 'market',
+                                limitPrice: isLimitEntry ? String(formattedLimitPrice) : undefined,
+                                entryFilled: !isLimitEntry || isAddPosition, // 市价单已成交（止盈止损已挂）；限价单待成交后登记
+                                isAddPosition: !!isAddPosition // 加仓单沿用原止盈止损，不补挂
                             });
                             
                             console.log(`交易记录保存成功: ${createFuturesOrder.body.id}`);
@@ -367,6 +328,138 @@ const createOrder = async (futuresApi, futureContractData, settle, symbol, direc
     } catch (e) {
         console.log("Gate 下单出错", e)
     }
+}
+
+/**
+ * 止盈止损挂单（Gate）
+ * 市价入场时直接按成交价挂；限价入场单成交后由 limitEntryManager 按持仓均价挂
+ * @param {Object} params
+ * @param {Object} params.userOptions - 用户交易配置
+ * @param {string} params.symbol - 币种
+ * @param {string} params.direction - buy/sell
+ * @param {string|number} params.entryPrice - 实际入场价（市价单传成交价，限价单传持仓均价）
+ * @param {Object} [params.futuresApi] - 复用已初始化的 FuturesApi（可选）
+ * @param {Object} [params.contract] - 复用已获取的合约信息（可选）
+ * @returns {Promise<boolean>} 是否成功
+ */
+export const placeGateProtection = async ({userOptions, symbol, direction, entryPrice, futuresApi: providedApi, contract: providedContract}) => {
+    try {
+        let futuresApi = providedApi
+        const settle = "usdt"
+
+        if (!futuresApi) {
+            const {apiKey, apiSecret, isTestOption} = userOptions
+            const gateClient = new GateApi.ApiClient();
+            gateClient.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
+            gateClient.basePath = isTestOption ? TRADE_TEST_API_URL : TRADE_API_URL
+            futuresApi = new GateApi.FuturesApi(gateClient)
+        }
+
+        const contract = providedContract || (await futuresApi.getFuturesContract(settle, `${symbol}_USDT`)).body
+        const entry = Number(entryPrice)
+        if (!Number.isFinite(entry) || entry <= 0) return false
+
+        const stopLossPercent = Number(userOptions.stopLoss)
+        const takeProfitPercent = Number(userOptions.takeProfit)
+
+        // 先清理该合约旧的止盈止损条件单，避免重复挂单
+        try {
+            const existing = await futuresApi.listPriceTriggeredOrders(settle, "open", {contract: `${symbol}_USDT`})
+            if (existing.body && existing.body.length > 0) {
+                await futuresApi.cancelPriceTriggeredOrderList(settle, {contract: `${symbol}_USDT`})
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        } catch (e) {
+            console.log(`Gate ${symbol} 清理旧条件单失败(忽略):`, e.message)
+        }
+
+        // 止损：买入止损价 = 入场价 × (1 - 止损%)；卖出止损价 = 入场价 × (1 + 止损%)
+        if (stopLossPercent > 0) {
+            const stopLossPrice = direction === "buy"
+                ? `${(1 - (stopLossPercent / 100)) * entry}`
+                : `${(1 + (stopLossPercent / 100)) * entry}`
+            const price = formatPrice(stopLossPrice, contract.orderPriceRound)
+
+            if (Number(price) > 0) {
+                await futuresApi.createPriceTriggeredOrder(settle, {
+                    initial: {
+                        contract: `${symbol}_USDT`,
+                        size: 0, // 0 表示平掉当前所有持仓
+                        price: "0", // 触发后的委托价格，0 表示市价
+                        reduceOnly: true,
+                        close: true,
+                        tif: "ioc",
+                    },
+                    trigger: {
+                        strategyType: 0,
+                        priceType: 0,
+                        price: price,
+                        rule: direction === "buy" ? 2 : 1 // 买入时止损触发规则为 2 (低于)，卖出时为 1 (高于)
+                    },
+                    orderType: direction === "buy" ? "close-long-position" : "close-short-position",
+                })
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+
+        // 止盈：买入止盈价 = 入场价 × (1 + 止盈%)；卖出止盈价 = 入场价 × (1 - 止盈%)
+        if (takeProfitPercent > 0) {
+            const profitPrice = direction === "buy"
+                ? `${(1 + (takeProfitPercent / 100)) * entry}`
+                : `${(1 - (takeProfitPercent / 100)) * entry}`
+            const price = formatPrice(profitPrice, contract.orderPriceRound)
+
+            if (Number(price) > 0) {
+                await futuresApi.createPriceTriggeredOrder(settle, {
+                    initial: {
+                        contract: `${symbol}_USDT`,
+                        size: 0,
+                        price: "0",
+                        reduceOnly: true,
+                        tif: "ioc",
+                        close: true,
+                    },
+                    trigger: {
+                        strategyType: 0,
+                        priceType: 0,
+                        price: price,
+                        rule: direction === "buy" ? 1 : 2 // 买入时止盈触发规则为 1 (高于)，卖出时为 2 (低于)
+                    },
+                    orderType: direction === "buy" ? "close-long-position" : "close-short-position",
+                })
+            }
+        }
+
+        console.log(`Gate ${symbol} 限价单成交，已按入场价 ${entry} 补挂止盈止损`)
+        return true
+    } catch (e) {
+        console.log(`Gate ${symbol} 补挂止盈止损失败:`, e.message)
+        return false
+    }
+}
+
+/**
+ * 获取 Gate 当前挂单列表
+ * @param {Object} userOptions - 用户交易配置
+ * @returns {Promise<Object>} { futuresApi, settle, orders }
+ */
+export const getGateOpenOrders = async (userOptions) => {
+    const {apiKey, apiSecret, isTestOption} = userOptions
+    const gateClient = new GateApi.ApiClient();
+    gateClient.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
+    gateClient.basePath = isTestOption ? TRADE_TEST_API_URL : TRADE_API_URL
+    const futuresApi = new GateApi.FuturesApi(gateClient)
+    const settle = "usdt"
+
+    const res = await futuresApi.listFuturesOrders(settle, "open", {limit: 100})
+    return {futuresApi, settle, orders: (res.body || []).map(o => ({...o, orderId: o.id}))}
+}
+
+/**
+ * 撤销 Gate 挂单
+ */
+export const cancelGateOrder = async ({futuresApi, settle, orderId}) => {
+    return futuresApi.cancelFuturesOrder(settle, orderId)
 }
 
 export const getGatePositions = async (userOptions) => {

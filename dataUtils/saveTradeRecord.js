@@ -10,9 +10,13 @@ export const saveTradeRecord = async (userId, tradeData) => {
         exchange,
         orderId,
         leverage,
-        status
+        status,
+        orderType,
+        limitPrice,
+        entryFilled,
+        isAddPosition
     } = tradeData;
-    
+
     await TradeRecordModel.create({
         userId,
         symbol,
@@ -22,6 +26,10 @@ export const saveTradeRecord = async (userId, tradeData) => {
         exchange,
         orderId,
         leverage,
-        status
+        status,
+        orderType,
+        limitPrice,
+        entryFilled,
+        isAddPosition
     });
 };

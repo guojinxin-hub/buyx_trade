@@ -215,7 +215,8 @@ class BinanceFuturesClient {
         }, true);
     }
     async getOpenOrders(symbol) {
-        return this._sendRequest('GET', '/fapi/v1/openOrders', { symbol }, true);
+        // 不传 symbol 时返回全部挂单（限价单管理需要跨币种查询）
+        return this._sendRequest('GET', '/fapi/v1/openOrders', symbol ? { symbol } : {}, true);
     }
     // 撤销该合约所有 algo 条件单（止盈止损等条件单已迁移至 Algo Service，
     // /fapi/v1/openOrders 查不到 algo 单，也无法按类型筛选撤单，只能全撤）

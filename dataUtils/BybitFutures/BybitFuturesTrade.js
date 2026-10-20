@@ -259,11 +259,30 @@ class BybitFuturesTrader {
             takeProfitPercent = 0,
             stopLossPercent = 0,
             symbolInfo,
-            settingDirection
+            settingDirection,
+            limitPrice,
+            entryType = 'market'
         } = params;
 
         try {
-            console.log(`开始执行交易: ${symbol}, 方向: ${direction}, 金额: ${usdtAmount} USDT, 杠杆: ${leverage}x`);
+            const isLimitEntry = entryType === 'limit';
+            console.log(`开始执行交易: ${symbol}, 方向: ${direction}, 金额: ${usdtAmount} USDT, 杠杆: ${leverage}x, 形式: ${isLimitEntry ? '限价' : '市价'}, 委托价: ${limitPrice}`);
+
+            // 委托价：限价单用引擎下发的委托价；市价单用最新价（仅用于计算数量与止盈止损基准）
+            const priceFilter = symbolInfo.priceFilter;
+            const tickSize = parseFloat(priceFilter?.tickSize || 0.01);
+            let formattedLimitPrice = null;
+            let priceForSize;
+            if (isLimitEntry) {
+                formattedLimitPrice = this.formatToPrecision(Number(limitPrice), priceFilter?.tickSize);
+                if (!formattedLimitPrice || Number(formattedLimitPrice) <= 0) {
+                    return {success: false, error: '缺少有效委托价，跳过该币种'};
+                }
+                priceForSize = formattedLimitPrice;
+            } else {
+                const ticker = await this.client.getTicker(symbol);
+                priceForSize = parseFloat(ticker.lastPrice);
+            }
 
             // 1. 检查保证金
             await this.checkMargin(symbol, usdtAmount, minMargin);
@@ -273,11 +292,6 @@ class BybitFuturesTrader {
             await this.client.setLeverage(symbol, leverage, leverage);
             console.log(`设置杠杆: ${leverage}x`);
             await this._delay(100);
-
-            // 3. 获取当前价格
-            const ticker = await this.client.getTicker(symbol);
-            await this._delay(100);
-            const currentPrice = parseFloat(ticker.lastPrice);
 
             // 获取当前持仓（判断反手 / 加仓）
             const currentPosition = await this.getCurrentPosition(symbol);
@@ -292,27 +306,25 @@ class BybitFuturesTrader {
                 isAddPosition = !isReverse;
             }
 
-            // 计算止盈止损价格
+            // 止盈止损以委托价（限价）/最新价（市价）为基准
             let takeProfitPrice, stopLossPrice;
 
             if (direction === 'Buy') {
-                takeProfitPrice = currentPrice * (1 + takeProfitPercent / 100);
-                stopLossPrice = currentPrice * (1 - stopLossPercent / 100);
+                takeProfitPrice = priceForSize * (1 + takeProfitPercent / 100);
+                stopLossPrice = priceForSize * (1 - stopLossPercent / 100);
             } else {
-                takeProfitPrice = currentPrice * (1 - takeProfitPercent / 100);
-                stopLossPrice = currentPrice * (1 + stopLossPercent / 100);
+                takeProfitPrice = priceForSize * (1 - takeProfitPercent / 100);
+                stopLossPrice = priceForSize * (1 + stopLossPercent / 100);
             }
 
             if (takeProfitPrice < 0) takeProfitPrice = 0;
             if (stopLossPrice < 0) stopLossPrice = 0;
 
             // 格式化价格精度
-            const priceFilter = symbolInfo.priceFilter;
-            const tickSize = parseFloat(priceFilter?.tickSize || 0.01);
             takeProfitPrice = this.formatToPrecision(takeProfitPrice, tickSize);
             stopLossPrice = this.formatToPrecision(stopLossPrice, tickSize);
 
-            console.log(`当前价格 ${currentPrice}, 止盈价格: ${takeProfitPrice}, 止损价格: ${stopLossPrice}`);
+            console.log(`委托价/现价 ${priceForSize}, 止盈价格: ${takeProfitPrice}, 止损价格: ${stopLossPrice}`);
 
             // 止盈止损仅在"配置了百分比"且"非加仓"时随单提交：
             // - 百分比为 0 时不再提交（否则 TP=当前价会被 Bybit 判为非法价而整单被拒）
@@ -328,11 +340,15 @@ class BybitFuturesTrader {
             // 计算数量
             const quantity = this.calculateQuantity({
                 symbolInfo,
-                lastPrice: currentPrice,
+                lastPrice: priceForSize,
                 usdtAmount,
                 leverage
             });
 
+            const orderType = isLimitEntry ? 'Limit' : 'Market';
+            const orderPrice = isLimitEntry ? formattedLimitPrice.toString() : undefined;
+
+            // Bybit 限价单：价格 + GTC；附带止盈止损在成交开仓后生效
             if (hasPosition) {
                 // 反向持仓：先平仓再开仓（新仓位，正常挂止盈止损）
                 if (isReverse) {
@@ -344,15 +360,20 @@ class BybitFuturesTrader {
                         const order = await this.client.placeOrder({
                             symbol: symbol,
                             side: direction,
-                            orderType: 'Market',
+                            orderType: orderType,
                             qty: quantity.toString(),
+                            price: orderPrice,
                             positionIdx: 0,
                             ...buildTpSl(false)
                         });
                         console.log('开仓结果:', order);
                         return {
                             success: true,
-                            order: order
+                            order: order,
+                            filledPrice: priceForSize,
+                            orderType: isLimitEntry ? 'limit' : 'market',
+                            filledQuantity: quantity,
+                            isAddPosition: false
                         };
                     }
                 }
@@ -363,15 +384,20 @@ class BybitFuturesTrader {
                         const order = await this.client.placeOrder({
                             symbol: symbol,
                             side: direction,
-                            orderType: 'Market',
+                            orderType: orderType,
                             qty: quantity.toString(),
+                            price: orderPrice,
                             positionIdx: 0,
                             ...buildTpSl(true)
                         });
                         console.log('加仓结果:', order);
                         return {
                             success: true,
-                            order: order
+                            order: order,
+                            filledPrice: priceForSize,
+                            orderType: isLimitEntry ? 'limit' : 'market',
+                            filledQuantity: quantity,
+                            isAddPosition: true
                         };
                     }
                 }
@@ -381,15 +407,20 @@ class BybitFuturesTrader {
                     const order = await this.client.placeOrder({
                         symbol: symbol,
                         side: direction,
-                        orderType: 'Market',
+                        orderType: orderType,
                         qty: quantity.toString(),
+                        price: orderPrice,
                         positionIdx: 0,
                         ...buildTpSl(false)
                     });
                     console.log('开仓结果:', order);
                     return {
                         success: true,
-                        order: order
+                        order: order,
+                        filledPrice: priceForSize,
+                        orderType: isLimitEntry ? 'limit' : 'market',
+                        filledQuantity: quantity,
+                        isAddPosition: false
                     };
                 }
             }

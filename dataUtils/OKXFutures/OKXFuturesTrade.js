@@ -323,11 +323,29 @@ class OKXFuturesTrader {
             takeProfitPercent = 0,
             stopLossPercent = 0,
             symbolInfo,
-            settingDirection = "all"
+            settingDirection = "all",
+            limitPrice,
+            entryType = 'market'
         } = params;
 
         try {
-            console.log(`开始执行交易: ${instId}, 方向: ${direction}, 金额: ${usdtAmount} USDT, 杠杆: ${leverage}x`);
+            const isLimitEntry = entryType === 'limit';
+            console.log(`开始执行交易: ${instId}, 方向: ${direction}, 金额: ${usdtAmount} USDT, 杠杆: ${leverage}x, 形式: ${isLimitEntry ? '限价' : '市价'}, 委托价: ${limitPrice}`);
+
+            // 委托价：限价单用引擎下发的委托价；市价单用最新价（仅用于计算张数与止盈止损基准）
+            let formattedLimitPrice = null;
+            let priceForSize;
+            if (isLimitEntry) {
+                formattedLimitPrice = this.formatToPrecision(limitPrice, symbolInfo?.tickSz);
+                if (!formattedLimitPrice || Number(formattedLimitPrice) <= 0) {
+                    return {success: false, error: '缺少有效委托价，跳过该币种'};
+                }
+                priceForSize = formattedLimitPrice;
+            } else {
+                const ticker = await this.client.getTicker(instId);
+                priceForSize = parseFloat(ticker.last);
+            }
+
             // 1. 检查保证金
             await this.checkMargin(instId, usdtAmount, minMargin);
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -336,21 +354,15 @@ class OKXFuturesTrader {
             console.log(`设置杠杆: ${leverage}x`);
             await new Promise(resolve => setTimeout(resolve, 100));
 
-
-            // 获取当前市价单价格，并且计算止盈止损价格，根据价格获取张数
-            // 3. 获取当前价格和计算数量
-            const ticker = await this.client.getTicker(instId);
-            const currentPrice = parseFloat(ticker.last);
-
-            // 计算止盈止损价格
+            // 3. 止盈止损价格以委托价（限价）/最新价（市价）为基准
             let takeProfitPrice, stopLossPrice;
 
             if (direction.toLowerCase() === 'buy') {
-                takeProfitPrice = currentPrice * (1 + takeProfitPercent / 100);
-                stopLossPrice = currentPrice * (1 - stopLossPercent / 100);
+                takeProfitPrice = priceForSize * (1 + takeProfitPercent / 100);
+                stopLossPrice = priceForSize * (1 - stopLossPercent / 100);
             } else {
-                takeProfitPrice = currentPrice * (1 - takeProfitPercent / 100);
-                stopLossPrice = currentPrice * (1 + stopLossPercent / 100);
+                takeProfitPrice = priceForSize * (1 - takeProfitPercent / 100);
+                stopLossPrice = priceForSize * (1 + stopLossPercent / 100);
             }
             if (takeProfitPrice < 0) {
                 takeProfitPrice = 0
@@ -358,9 +370,10 @@ class OKXFuturesTrader {
             if (stopLossPrice < 0) {
                 stopLossPrice = 0
             }
-            // 格式化价格到正确精度
-            console.log(`当前价格 ${currentPrice} 止盈价格: ${takeProfitPrice}, 止损价格: ${stopLossPrice} 方向：${direction} ,USDT: ${usdtAmount}`);
-            const size = this.calculateQuantity({symbolInfo, lastPrice: currentPrice, usdtAmount, leverage})
+            console.log(`委托价/现价 ${priceForSize} 止盈价格: ${takeProfitPrice}, 止损价格: ${stopLossPrice} 方向：${direction} ,USDT: ${usdtAmount}`);
+            const size = this.calculateQuantity({symbolInfo, lastPrice: priceForSize, usdtAmount, leverage})
+            const orderType = isLimitEntry ? 'limit' : 'market';
+            const orderPx = isLimitEntry ? formattedLimitPrice : undefined;
 
             const currentPosition = await this.getCurrentPosition(instId);
             let order = null;
@@ -376,7 +389,9 @@ class OKXFuturesTrader {
                         order = await this.client.placeOrderWithUsdt({
                             instId,
                             side: direction,
-                            size: size, // 100 USDT
+                            size: size,
+                            ordType: orderType,
+                            px: orderPx,
                             attachAlgoOrds: {
                                 slTriggerPx: stopLossPrice, // 止损触发价
                                 slOrdPx: -1, // -1表示市价止损
@@ -416,7 +431,9 @@ class OKXFuturesTrader {
                         order = await this.client.placeOrderWithUsdt({
                             instId,
                             side: direction,
-                            size: size, // 100 USDT
+                            size: size,
+                            ordType: orderType,
+                            px: orderPx,
                             attachAlgoOrds: addAttachAlgoOrds
                         });
                     }
@@ -426,7 +443,9 @@ class OKXFuturesTrader {
                     order = await this.client.placeOrderWithUsdt({
                         instId,
                         side: direction,
-                        size: size, // 100 USDT
+                        size: size,
+                        ordType: orderType,
+                        px: orderPx,
                         attachAlgoOrds: {
                             slTriggerPx: stopLossPrice, // 止损触发价
                             slOrdPx: -1, // -1表示市价止损
@@ -441,6 +460,8 @@ class OKXFuturesTrader {
             return {
                 success: true,
                 order,
+                orderType,
+                filledPrice: priceForSize
             };
         } catch (error) {
             console.error('交易执行失败:', error.message);

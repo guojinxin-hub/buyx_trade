@@ -146,9 +146,13 @@ const handleUserProfitProtection = async (userOption) => {
 
         logger.info(`用户 ${userOption.userId} 有 ${pendingOrders.length} 个 pending 状态的订单`);
 
+        // 限价入场单在成交前没有持仓，是否撤单由 limitEntryManager 统一管理（含24小时有效期），
+        // 此处只处理已成交的记录，避免把还在挂着的限价单提前置为 cancelled
+        const activeOrders = pendingOrders.filter(o => o.orderType !== 'limit' || o.entryFilled === true);
+
         // 检查并更新不在持仓中的订单状态
         // 如果数据库中有订单但用户实际没有持仓，则将订单状态改为cancelled
-        for (const order of pendingOrders) {
+        for (const order of activeOrders) {
             const orderSymbol = order.symbol.toUpperCase();
             const orderExchange = order.exchange || 'binance';
 
@@ -175,7 +179,7 @@ const handleUserProfitProtection = async (userOption) => {
         logger.info(`用户 ${userOption.userId} 有 ${positions.length} 个持仓`);
 
         // 获取用户在数据库中的币种列表
-        const tradeRecordSymbols = pendingOrders.map(o => o.symbol.toUpperCase());
+        const tradeRecordSymbols = activeOrders.map(o => o.symbol.toUpperCase());
         logger.info(`用户 ${userOption.userId} 在 TradeRecordModel 中的币种:`, tradeRecordSymbols);
 
         // 盈利保护触发阈值，默认为5%

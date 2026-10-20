@@ -10,6 +10,7 @@ import {routers} from "./routes";
 import {dbConnect} from "./dbConnect";
 import { startFloatingProfitProtectionScheduler } from "./dataUtils/floatingProfitProtection";
 import { startBreakEvenProtectionScheduler } from "./dataUtils/breakEvenProtection";
+import { startLimitEntryManager } from "./dataUtils/limitEntryManager";
 
 const app = express();
 
@@ -39,6 +40,10 @@ async function initializeApp() {
         // 启动保本触发定时任务（每5分钟检查持仓浮盈）
         await startBreakEvenProtectionScheduler();
         console.log('保本触发定时任务启动成功');
+
+        // 启动限价入场单管理器（成交补挂止盈止损 + 24小时未成交撤单）
+        startLimitEntryManager();
+        console.log('限价入场单管理器启动成功');
     } catch (error) {
         console.error('初始化应用失败:', error);
         process.exit(1);

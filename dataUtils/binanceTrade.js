@@ -92,6 +92,8 @@ export const binanceTrade = async ({ tradeData, userOptions }) => {
                     stopLossPercent: Number(stopLoss),// 止损
                     symbolInfo: item.symbolInfo,
                     settingDirection: direction === 'all' ? 'all' : toBinanceDirection(direction),
+                    limitPrice: item.limitPrice, // 逆势策略的委托价（市价单为 null）
+                    entryType: item.entryType, // limit=逆势限价委托；market=顺势市价突破
                 });
                 console.log('Binance 交易结果:', result);
 
@@ -106,7 +108,11 @@ export const binanceTrade = async ({ tradeData, userOptions }) => {
                             exchange: 'binance',
                             orderId: result.order.orderId.toString(),
                             leverage: String(leverage),
-                            status: 'pending'  // 先设为待处理状态
+                            status: 'pending',  // 先设为待处理状态
+                            orderType: result.orderType || 'market',
+                            limitPrice: (result.orderType === 'limit') ? String(result.filledPrice) : undefined,
+                            entryFilled: !!result.entryFilled,
+                            isAddPosition: !!result.isAddPosition // 加仓单沿用原止盈止损，不补挂
                         });
 
                         console.log(`交易记录保存成功: ${result.order.orderId}`);

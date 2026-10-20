@@ -112,7 +112,9 @@ export const bitgetTrade = async ({tradeData, userOptions}) => {
                     takeProfitPercent: Number(takeProfit),
                     stopLossPercent: Number(stopLoss),
                     symbolInfo: item.symbolInfo,
-                    settingDirection: direction
+                    settingDirection: direction,
+                    limitPrice: item.limitPrice, // 逆势策略的委托价（市价单为 null）
+                    entryType: item.entryType, // limit=逆势限价委托；market=顺势市价突破
                 });
                 console.log('Bitget 交易结果:', result);
 
@@ -121,13 +123,17 @@ export const bitgetTrade = async ({tradeData, userOptions}) => {
                     try {
                         await saveTradeRecord(userOptions.userId, {
                             symbol: item.symbol,
-                            price: result.order.price || '0',
-                            size: result.order.size || '0',
+                            price: String(result.filledPrice || item.limitPrice || '0'),
+                            size: String(result.filledQuantity || result.order.size || '0'),
                             direction: item.direction,
                             exchange: 'bitget',
                             orderId: result.order.orderId || result.order.id || '',
                             leverage: String(leverage),
-                            status: 'pending'
+                            status: 'pending',
+                            orderType: result.orderType || 'market',
+                            limitPrice: result.orderType === 'limit' ? String(result.filledPrice || item.limitPrice || '0') : undefined,
+                            entryFilled: result.orderType !== 'limit', // 市价已成交；限价单成交后由 limitEntryManager 登记
+                            isAddPosition: positionMap[item.symbol] === item.direction
                         });
                         console.log(`交易记录保存成功: ${result.order.orderId || result.order.id}`);
                     } catch (error) {

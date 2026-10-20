@@ -308,6 +308,7 @@ class BitgetFuturesClient {
             size,
             side, // buy/sell
             orderType = 'market',
+            price,
             marginMode = 'crossed',
             force = 'ioc',
             reduceOnly = 'NO',
@@ -323,10 +324,38 @@ class BitgetFuturesClient {
             size: `${size}`,
             side,
             orderType,
+            price: price !== undefined && price !== null ? `${price}` : undefined,
             force,
             reduceOnly,
             presetStopSurplusPrice: presetStopSurplusPrice !== undefined ? `${presetStopSurplusPrice}` : undefined,
             presetStopLossPrice: presetStopLossPrice !== undefined ? `${presetStopLossPrice}` : undefined
+        });
+    }
+
+    /**
+     * 获取当前未成交挂单
+     * @param {string} [symbol] - 交易对，不传则查询全部
+     * @returns {Promise<Array>}
+     */
+    async getPendingOrders(symbol) {
+        const params = {productType: this.tradeProductType, marginCoin: this.marginCoin};
+        if (symbol) params.symbol = this._toV2Symbol(symbol);
+        const resp = await this.client.get('/api/v2/mix/order/orders-pending', {params});
+        return resp.data || [];
+    }
+
+    /**
+     * 撤销单个挂单
+     * @param {string} symbol - 交易对
+     * @param {string} orderId - 订单ID
+     * @returns {Promise<Object>}
+     */
+    async cancelOrder(symbol, orderId) {
+        return this.client.post('/api/v2/mix/order/cancel-order', {
+            symbol: this._toV2Symbol(symbol),
+            productType: this.tradeProductType,
+            marginCoin: this.marginCoin,
+            orderId
         });
     }
 

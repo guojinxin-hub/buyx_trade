@@ -180,9 +180,30 @@ class BitgetFuturesTrade {
             takeProfitPercent = 0,
             stopLossPercent = 0,
             symbolInfo,
-            settingDirection
+            settingDirection,
+            limitPrice,
+            entryType = 'market'
         } = params;
         try {
+            const isLimitEntry = entryType === 'limit';
+            // 委托价：限价单用引擎下发的委托价；市价单用最新价（仅用于计算数量与止盈止损基准）
+            const pricePlace = Number(symbolInfo?.pricePlace ?? 6);
+            let formattedLimitPrice = null;
+            let priceForSize;
+            if (isLimitEntry) {
+                formattedLimitPrice = Number(Number(limitPrice).toFixed(pricePlace));
+                if (!Number.isFinite(formattedLimitPrice) || formattedLimitPrice <= 0) {
+                    return {success: false, error: '缺少有效委托价，跳过该币种'};
+                }
+                priceForSize = formattedLimitPrice;
+            } else {
+                const ticker = await this.client.getTicker(symbol);
+                priceForSize = this._getTickerLastPrice(ticker);
+                if (priceForSize <= 0) {
+                    return {success: false, error: '无法获取最新价，跳过该币种'};
+                }
+            }
+
             // 设置单向持仓
             try {
                 await this.client.setPositionMode('one_way_mode');
@@ -198,16 +219,9 @@ class BitgetFuturesTrade {
 
             await new Promise((r) => setTimeout(r, 100));
 
-            const ticker = await this.client.getTicker(symbol);
-            console.log("ticker", ticker)
-            const currentPrice = this._getTickerLastPrice(ticker);
-            console.log(symbolInfo,
-                currentPrice,
-                usdtAmount,
-                leverage)
             const size = this.calculateQuantity({
                 symbolInfo,
-                currentPrice,
+                currentPrice: priceForSize,
                 usdtAmount,
                 leverage
             });
@@ -234,36 +248,40 @@ class BitgetFuturesTrade {
             const side = direction === 'buy' ? 'buy' : 'sell';
             let takeProfitPrice = undefined;
             let stopLossPrice = undefined;
-            const priceStep = symbolInfo?.pricePlace
-            console.log("priceStep",priceStep)
             // 加仓时不再重设止盈止损，保留原仓位已有的计划委托（避免按加仓价把原止损整体挪走）
             if (!isAddPosition && takeProfitPercent > 0) {
                 takeProfitPrice = direction === 'buy'
-                    ? currentPrice * (1 + takeProfitPercent / 100)
-                    : currentPrice * (1 - takeProfitPercent / 100);
-                takeProfitPrice = takeProfitPrice.toFixed(Number(priceStep))
+                    ? priceForSize * (1 + takeProfitPercent / 100)
+                    : priceForSize * (1 - takeProfitPercent / 100);
+                takeProfitPrice = takeProfitPrice.toFixed(pricePlace)
             }
             if (!isAddPosition && stopLossPercent > 0) {
                 stopLossPrice = direction === 'buy'
-                    ? currentPrice * (1 - stopLossPercent / 100)
-                    : currentPrice * (1 + stopLossPercent / 100);
-                stopLossPrice = stopLossPrice.toFixed(Number(priceStep));
+                    ? priceForSize * (1 - stopLossPercent / 100)
+                    : priceForSize * (1 + stopLossPercent / 100);
+                stopLossPrice = stopLossPrice.toFixed(pricePlace);
             }
-            // Bitget v2 下单时用 preset*Price 一次性挂好止盈止损
+            // 限价单 gtc（24小时未成交由 limitEntryManager 撤单）；市价单 ioc
+            // preset*Price 在成交开仓后生效
             const order = await this.client.placeOrder({
                 symbol,
                 size,
                 side,
                 tradeSide: 'open',
-                orderType: 'market',
-                force: 'ioc',
+                orderType: isLimitEntry ? 'limit' : 'market',
+                price: isLimitEntry ? formattedLimitPrice : undefined,
+                force: isLimitEntry ? 'gtc' : 'ioc',
                 presetStopSurplusPrice: takeProfitPrice,
                 presetStopLossPrice: stopLossPrice
             });
 
             return {
                 success: true,
-                order: order.data || {}
+                order: order.data || {},
+                filledPrice: priceForSize,
+                filledQuantity: size,
+                isAddPosition,
+                orderType: isLimitEntry ? 'limit' : 'market'
             };
         } catch (error) {
             console.error('Bitget 交易执行失败:', error.message);
