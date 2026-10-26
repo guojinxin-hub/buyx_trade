@@ -74,8 +74,8 @@ export const postRecommendData = async (req, res) => {
         }
 
         // 3.5 委托单：engine 已按策略写入委托形式
-        //     - 逆势策略（priceTrend/continuousFundFlow/cci）：entryType=limit，orderPrice=最近4日高低中值
-        //     - 顺势策略（fundFlowTrend/marketSignal）：entryType=market，允许突破入场
+        //     - 限价策略（priceTrend/continuousFundFlow/cci/marketSignal）：entryType=limit，orderPrice=最近4日高低中值
+        //     - 顺势策略（fundFlowTrend）：entryType=market，允许突破入场
         const orderRecommends = [];
         for (const recommend of filteredRecommends) {
             const entryType = recommend.entryType === 'limit' ? 'limit' : 'market';
