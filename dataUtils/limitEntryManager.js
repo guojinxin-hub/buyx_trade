@@ -2,7 +2,7 @@
  * 限价委托单管理器（定时任务，默认每 60 秒）
  *
  * 背景：engine 把推荐改成"带价格+方向的委托单"——
- *   - 限价策略（priceTrend / continuousFundFlow / cci / marketSignal）：entryType=limit，不追突破，挂最近4日高低中值
+ *   - 限价策略：entryType=limit，不追突破。X/J/L 买入=4日最低价×系数、卖出=4日最高价×系数（系数后台可配），C 取4日高低中值
  *   - 顺势策略（fundFlowTrend）：entryType=market，允许突破入场（本管理器不处理）
  *
  * 限价单可能长时间不成交，因此需要独立管理：

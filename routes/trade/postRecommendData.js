@@ -74,7 +74,7 @@ export const postRecommendData = async (req, res) => {
         }
 
         // 3.5 委托单：engine 已按策略写入委托形式
-        //     - 限价策略（priceTrend/continuousFundFlow/cci/marketSignal）：entryType=limit，orderPrice=最近4日高低中值
+        //     - 限价策略：entryType=limit，X/J/L 买入=4日最低价×系数、卖出=4日最高价×系数，C 取4日高低中值
         //     - 顺势策略（fundFlowTrend）：entryType=market，允许突破入场
         const orderRecommends = [];
         for (const recommend of filteredRecommends) {
@@ -88,7 +88,10 @@ export const postRecommendData = async (req, res) => {
             let limitPrice = Number(recommend.orderPrice);
             if (!limitPrice || limitPrice <= 0) {
                 // 兜底：历史推荐没有写入委托价时按同一公式补算
-                limitPrice = await getLimitEntryPrice(recommend.symbol);
+                limitPrice = await getLimitEntryPrice(recommend.symbol, {
+                    direction: recommend.direction,
+                    strategy: recommend.strategy
+                });
             }
             if (!limitPrice) {
                 console.warn(`币种 ${recommend.symbol} 为限价委托但缺少有效委托价，跳过下单`);

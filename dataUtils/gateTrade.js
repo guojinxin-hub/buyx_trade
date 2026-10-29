@@ -224,7 +224,7 @@ export const gateTrade = async ({ tradeData, userOptions }) => {
 }
 
 // 下单（usdtAmount：下单资金，同向加仓时由加仓规则传入，入场/反手时不传则用原始单资金 maxVolume）
-// entryType：'limit'=逆势策略限价挂单（最近4日高低中值，24小时未成交自动撤单）；'market'=顺势策略市价突破入场
+// entryType：'limit'=逆势策略限价挂单（X/J/L 取4日高低边界×系数，24小时未成交自动撤单）；'market'=顺势策略市价突破入场
 // isAddPosition：是否为同向加仓。加仓时保留原有止盈止损条件单（size=0 全仓平仓，天然覆盖新增仓位），不重挂
 const createOrder = async (futuresApi, futureContractData, settle, symbol, direction, userOptions, usdtAmount, isAddPosition = false, limitPrice, entryType = 'market') => {
     try {
