@@ -5,9 +5,14 @@ class BinanceFuturesClient {
     constructor(apiKey, apiSecret, isTestnet = false) {
         this.apiKey = apiKey;
         this.apiSecret = apiSecret;
+        // 2026 年 Binance 把期货 Testnet 并入统一 Demo Trading：
+        //   官方建议改用 https://demo-fapi.binance.com，密钥在 demo.binance.com 生成
+        //   （老 testnet.binancefuture.com 只认旧 testnet 密钥，用 demo 密钥请求会返回 -1109 Invalid account）
+        // 两个环境都可能按账号归属不同，用环境变量覆盖，避免再改代码
+        const testnetBase = process.env.BINANCE_TESTNET_BASE_URL || 'https://demo-fapi.binance.com';
         this.baseURL = isTestnet
-            ? 'https://testnet.binancefuture.com'
-            : 'https://fapi.binance.com';
+            ? testnetBase
+            : (process.env.BINANCE_BASE_URL || 'https://fapi.binance.com');
         this.recvWindow = 5000;
         // 添加请求队列和延迟机制
         this.requestQueue = [];

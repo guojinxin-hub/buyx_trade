@@ -430,7 +430,7 @@ class BybitFuturesTrader {
                 order: null
             };
         } catch (error) {
-            console.error('交易执行失败:', error.message);
+            console.error(`交易执行失败(${symbol}):`, error.message);
             return {
                 success: false,
                 error: error.message

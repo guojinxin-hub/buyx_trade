@@ -13,9 +13,14 @@ class BybitClient {
     constructor(config) {
         this.apiKey = config.apiKey;
         this.secretKey = config.secretKey;
+        // Testnet 与 Demo Trading 是两套环境、密钥不通用：
+        //   测试网 https://api-testnet.bybit.com（旧）
+        //   模拟盘 https://api-demo.bybit.com（bybit 主站模拟账户，密钥在模拟账户里生成）
+        // 用环境变量切换，避免改代码
+        const testnetBase = process.env.BYBIT_TESTNET_BASE_URL || 'https://api-testnet.bybit.com';
         this.baseURL = config.isTestnet
-            ? 'https://api-testnet.bybit.com'
-            : (config.baseURL || 'https://api.bybit.com');
+            ? testnetBase
+            : (config.baseURL || process.env.BYBIT_BASE_URL || 'https://api.bybit.com');
         this.isTestnet = config.isTestnet || false;
 
         // 创建axios实例

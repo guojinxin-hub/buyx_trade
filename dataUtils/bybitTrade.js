@@ -26,9 +26,18 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
             isTestnet: isTestOption
         });
 
+        // 分阶段打标：异常时日志直接指出卡在哪一步（getSymbolsInfo / getAccountInfo / setPositionMode / getPositions / placeOrder）
+        const step = async (name, fn) => {
+            try {
+                return await fn();
+            } catch (e) {
+                throw new Error(`[${name}] ${e.message}`);
+            }
+        };
+
         // 获取所有交易对信息
         let futureContractData = [];
-        const symbols = await trader.getSymbolsInfo();
+        const symbols = await step('getSymbolsInfo', () => trader.getSymbolsInfo());
         await new Promise(resolve => setTimeout(resolve, 100));
 
         // 过滤需要交易的币种
@@ -55,7 +64,7 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
             const { direction, insurance, maxVolume, leverage, stopLoss, takeProfit } = userOptions;
 
             // 获取用户的账户余额
-            const accountBalance = await trader.getAccountInfo();
+            const accountBalance = await step('getAccountInfo', () => trader.getAccountInfo());
             await new Promise(resolve => setTimeout(resolve, 100));
 
             await saveUserBalance(userOptions.userId, accountBalance.balance, userOptions.belong);
@@ -67,7 +76,7 @@ export const bybitTrade = async ({ tradeData, userOptions }) => {
             }
             
             // 获取当前持仓并构建映射 {symbol: direction} 和盈亏映射 {symbol: upl}
-            const positions = await trader.getPositions();
+            const positions = await step('getPositions', () => trader.getPositions());
             await new Promise(resolve => setTimeout(resolve, 100));
             const positionMap = {};
             const positionUplMap = {};
