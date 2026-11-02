@@ -74,7 +74,7 @@ export const postRecommendData = async (req, res) => {
         }
 
         // 3.5 委托单：engine 已按策略写入委托形式
-        //     - 限价策略：entryType=limit，X/J/L 买入=4日最低价×系数、卖出=4日最高价×系数，C 取4日高低中值
+        //     - 限价策略：entryType=limit，X/J/L 做多=1D MA20×买入系数、做空=1D MA20×卖出系数，C 取4日高低中值
         //     - 顺势策略（fundFlowTrend）：entryType=market，允许突破入场
         const orderRecommends = [];
         for (const recommend of filteredRecommends) {
