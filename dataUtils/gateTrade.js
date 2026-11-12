@@ -9,20 +9,27 @@ import moment from "moment";
 const GateApi = require('gate-api');
 const TRADE_API_URL = process.env.TRADE_API_URL
 const TRADE_TEST_API_URL = process.env.TRADE_TEST_API_URL
-let client = new GateApi.ApiClient();
+
+/**
+ * 每次调用都新建独立 client。
+ * 之前模块级共享 ApiClient 时，多个交易配置（尤其测试/实盘混用）+ 多个定时任务并发，
+ * 会互相覆盖 apiKey/basePath，导致 A 配置的订单被 B 账户签名或发到错误环境
+ * （表现为"选的 5X 账户里出现 2X 配置的单子"）。
+ */
+const createGateClient = ({apiKey, apiSecret, isTestOption}) => {
+    const gateClient = new GateApi.ApiClient();
+    gateClient.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
+    gateClient.basePath = isTestOption ? TRADE_TEST_API_URL : TRADE_API_URL;
+    return gateClient;
+};
 
 // 更新保护止损单
 export const updateProtectionStopLoss = async (req, res) => {
     try {
         const { userOptions, symbol, direction, protectionPrice } = req.body;
         
-        // 1. 初始化 API 客户端
-        const {apiKey, apiSecret, isTestOption} = userOptions
-        client.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
-        client.basePath = isTestOption ? TRADE_TEST_API_URL : TRADE_API_URL
-        
-        // 2. 初始化期货 API 接口
-        const futuresApi = new GateApi.FuturesApi(client);
+        // 1. 初始化 API 客户端（独立实例，避免并发串号）
+        const futuresApi = new GateApi.FuturesApi(createGateClient(userOptions));
         const settle = "usdt" // 结算货币为 USDT 本位合约
         
         // 3. 获取合约详细信息
@@ -102,13 +109,9 @@ export const updateProtectionStopLoss = async (req, res) => {
 export const gateTrade = async ({ tradeData, userOptions }) => {
     try {
         console.log(moment().format("YYYY-MM-DD HH:mm:ss"),userOptions.userId,"Gate 交易开始");
-        // 1. 初始化 API 客户端
-        const {apiKey, apiSecret, isTestOption, currency} = userOptions
-        client.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
-        client.basePath = isTestOption ? TRADE_TEST_API_URL : TRADE_API_URL
-        
-        // 2. 初始化期货 API 接口
-        const futuresApi = new GateApi.FuturesApi(client);
+        // 1. 初始化 API 客户端（独立实例，避免与其它配置/定时任务共用造成串号）
+        const {currency} = userOptions
+        const futuresApi = new GateApi.FuturesApi(createGateClient(userOptions));
         const settle = "usdt" // 结算货币为 USDT 本位合约
         const futureContractData = []
         let filterTradeDate = null
@@ -444,11 +447,7 @@ export const placeGateProtection = async ({userOptions, symbol, direction, entry
  * @returns {Promise<Object>} { futuresApi, settle, orders }
  */
 export const getGateOpenOrders = async (userOptions) => {
-    const {apiKey, apiSecret, isTestOption} = userOptions
-    const gateClient = new GateApi.ApiClient();
-    gateClient.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
-    gateClient.basePath = isTestOption ? TRADE_TEST_API_URL : TRADE_API_URL
-    const futuresApi = new GateApi.FuturesApi(gateClient)
+    const futuresApi = new GateApi.FuturesApi(createGateClient(userOptions))
     const settle = "usdt"
 
     const res = await futuresApi.listFuturesOrders(settle, "open", {limit: 100})
@@ -464,11 +463,7 @@ export const cancelGateOrder = async ({futuresApi, settle, orderId}) => {
 
 export const getGatePositions = async (userOptions) => {
     try {
-        const {apiKey, apiSecret, isTestOption} = userOptions;
-        client.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
-        client.basePath = isTestOption ? TRADE_TEST_API_URL : TRADE_API_URL;
-        
-        const futuresApi = new GateApi.FuturesApi(client);
+        const futuresApi = new GateApi.FuturesApi(createGateClient(userOptions));
         const settle = "usdt";
         
         const positions = await futuresApi.listPositions(settle);

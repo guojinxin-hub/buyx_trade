@@ -8,7 +8,6 @@ import {getUserPositions} from "./apiTrade";
 const GateApi = require('gate-api');
 const TRADE_API_URL = process.env.TRADE_API_URL;
 const TRADE_TEST_API_URL = process.env.TRADE_TEST_API_URL;
-let gateClient = new GateApi.ApiClient();
 
 // Binance API
 const BinanceFuturesTrade = require('./BinanceFutures/BinanceFuturesTrade');
@@ -93,8 +92,9 @@ export const executeGateClosePositions = async ({tradeData, userOptions}) => {
     try {
         console.log(`为用户 ${userOptions.userId} 在Gate交易所执行平仓操作`);
         
-        // 初始化 API 客户端
+        // 初始化 API 客户端（每次新建，避免多配置/多任务并发时互相覆盖密钥与环境）
         const {apiKey, apiSecret, isTestOption} = userOptions;
+        const gateClient = new GateApi.ApiClient();
         gateClient.setApiKeySecret(decrypt(apiKey), decrypt(apiSecret));
         gateClient.basePath = isTestOption ? TRADE_TEST_API_URL : TRADE_API_URL;
         

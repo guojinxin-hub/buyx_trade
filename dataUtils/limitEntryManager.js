@@ -48,6 +48,59 @@ const normalizeSymbol = (symbol) => String(symbol || '')
     .replace(/USDT$/, '');
 
 /**
+ * 判断两个委托价是否属于同一档（交易所精度/浮点误差内视为相同）
+ */
+export const isSameLimitPrice = (a, b) => {
+    const x = Number(a);
+    const y = Number(b);
+    if (!(x > 0) || !(y > 0)) return false;
+    return Math.abs(x - y) / y < 0.001;
+};
+
+/**
+ * 取交易所挂单对应的币种（统一成无后缀格式）
+ */
+const getOrderSymbol = (belong, order) => {
+    switch (belong) {
+        case 'Gate':
+            return String(order.contract || '').replace('_USDT', '');
+        case 'OKX':
+            return String(order.instId || '').replace('-USDT-SWAP', '');
+        default:
+            return String(order.symbol || '');
+    }
+};
+
+/**
+ * 是否为"入场限价挂单"（排除只减仓/平仓单，避免误撤止盈止损）
+ */
+const isEntryLimitOrder = (belong, order) => {
+    switch (belong) {
+        case 'Gate':
+            return !order.isReduceOnly && !order.reduceOnly && !order.isClose && !order.close
+                && Number(order.price) > 0;
+        case 'Binance':
+            return String(order.type || '').toUpperCase() === 'LIMIT' && !order.reduceOnly;
+        case 'OKX':
+            return String(order.ordType || '').toLowerCase() === 'limit' && String(order.reduceOnly) !== 'true';
+        case 'Bybit':
+            return String(order.orderType || '').toLowerCase() === 'limit'
+                && !order.reduceOnly
+                && !order.stopOrderType
+                && !(Number(order.triggerPrice) > 0);
+        case 'Bitget':
+            return String(order.orderType || '').toLowerCase() === 'limit'
+                && String(order.tradeSide || '').toLowerCase() !== 'close'
+                && String(order.reduceOnly || '').toUpperCase() !== 'YES';
+        default:
+            return false;
+    }
+};
+
+const getOrderId = (order) => String(order.orderId || order.id || order.ordId || order.orderID || '');
+const getOrderPrice = (order) => Number(order.price || order.px || 0);
+
+/**
  * 构建各交易所的限价单操作适配器
  * @param {Object} userOption - 用户交易配置
  * @returns {Object|null}
@@ -172,6 +225,93 @@ const ctxSafePlaceBinance = async (trader, record, position, userOption) => {
         takeProfitPercent: Number(userOption.takeProfit) || 0,
         stopLossPercent: Number(userOption.stopLoss) || 0
     });
+};
+
+/**
+ * 下单前整理限价委托：保证同一账户同一币种同时只有一条入场挂单
+ *
+ * 1. 交易所上已有同价挂单 -> 保留旧单，本次不再重复挂
+ * 2. 有其它价格的同币种挂单 -> 先撤销（跨用户配置共用同一账户也能撤到），再挂新单
+ *
+ * @param {Object} userOption - 用户交易配置
+ * @param {Array} recommends - 待挂单的限价委托 [{symbol, direction, limitPrice}]
+ * @returns {Promise<Array>} 实际需要挂单的委托列表
+ */
+export const prepareLimitEntryOrders = async (userOption, recommends) => {
+    if (!Array.isArray(recommends) || recommends.length === 0) return [];
+
+    const adapter = createAdapter(userOption);
+    if (!adapter) return recommends;
+
+    let openOrders = [];
+    let ctx = null;
+    try {
+        const res = await adapter.getOpenOrders();
+        openOrders = res.orders || [];
+        ctx = res.ctx;
+    } catch (e) {
+        // 取不到挂单时保守处理：按原逻辑继续下单，避免整轮无法入场
+        logger.warn(`${userOption.belong} 获取未成交挂单失败，跳过重复挂单检查:`, e.message);
+        return recommends;
+    }
+
+    const openEntries = openOrders
+        .filter(order => isEntryLimitOrder(userOption.belong, order))
+        .map(order => ({
+            symbol: normalizeSymbol(getOrderSymbol(userOption.belong, order)),
+            orderId: getOrderId(order),
+            price: getOrderPrice(order)
+        }));
+
+    const placeList = [];
+    const cancelledOrderIds = [];
+
+    for (const item of recommends) {
+        const symbolKey = normalizeSymbol(item.symbol);
+        const sameSymbolOrders = openEntries.filter(order => order.symbol === symbolKey);
+
+        // 已有同价挂单：保留旧单，避免每轮撤单重挂（也避免短暂空仓）
+        const samePriceOrder = sameSymbolOrders.find(order => isSameLimitPrice(order.price, item.limitPrice));
+        if (samePriceOrder) {
+            // 旧记录若被误关（如随持仓平仓被标成 closed），重新纳管，避免成为无人管理的孤儿挂单
+            try {
+                await TradeRecordModel.updateMany(
+                    {orderId: samePriceOrder.orderId, status: {$ne: 'pending'}},
+                    {$set: {status: 'pending'}}
+                );
+            } catch (e) {
+                logger.warn(`${item.symbol}（${userOption.belong}）恢复挂单记录状态失败:`, e.message);
+            }
+            logger.info(`${item.symbol}（${userOption.belong}）已有同价挂单 ${samePriceOrder.price}，跳过重复挂单`);
+            continue;
+        }
+
+        // 旧单价格已过期：先撤单，保证一个币种同时只有一条挂单
+        for (const order of sameSymbolOrders) {
+            try {
+                await adapter.cancelOrder(ctx, {symbol: item.symbol, orderId: order.orderId});
+                cancelledOrderIds.push(order.orderId);
+                logger.info(`${item.symbol}（${userOption.belong}）撤销旧挂单 ${order.orderId}（${order.price}），改挂 ${item.limitPrice}`);
+            } catch (e) {
+                logger.warn(`${item.symbol}（${userOption.belong}）撤销旧挂单 ${order.orderId} 失败:`, e.message);
+            }
+        }
+        placeList.push(item);
+    }
+
+    // 交易所侧已撤销：本地记录同步关闭（可能属于共用同一账户的其它配置，按 orderId 全量关闭）
+    if (cancelledOrderIds.length > 0) {
+        try {
+            await TradeRecordModel.updateMany(
+                {orderId: {$in: cancelledOrderIds}},
+                {$set: {status: 'cancelled'}}
+            );
+        } catch (e) {
+            logger.warn('同步已撤销挂单的本地记录失败:', e.message);
+        }
+    }
+
+    return placeList;
 };
 
 /**

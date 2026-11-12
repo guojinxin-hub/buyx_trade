@@ -97,7 +97,10 @@ export const closeAllPositions = async (req, res) => {
                     const tradeRecords = await TradeRecordModel.find({
                         userId: option.userId,
                         symbol: symbol,
-                        status: { $ne: 'closed' }
+                        status: { $ne: 'closed' },
+                        // 未成交的限价入场单没有持仓，不能随持仓平仓一起关闭，
+                        // 否则本地失去跟踪，下一轮信号会重复挂单
+                        $or: [{ orderType: { $ne: 'limit' } }, { entryFilled: true }]
                     }).lean();
                     
                     // 为每个交易记录计算收益率并更新

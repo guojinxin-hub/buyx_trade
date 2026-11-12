@@ -18,14 +18,24 @@
 import {UserTradeOptionsModel} from "buydip_scheme/scheme/userTradeOptions";
 import {TradeRecordModel} from "buydip_scheme/scheme/tradeRecord";
 import {isEmpty} from "lodash";
-import {OverallRecModel} from "buydip_scheme";
+import {OverallRecModel, UserModel} from "buydip_scheme";
 import moment from "moment";
 import {formatResponse} from "../../dataUtils/formatResponse";
 import {apiTrade, getUserPositions} from "../../dataUtils/apiTrade";
 import {executeClosePositions} from "../../dataUtils/closePositions";
 import {getLimitEntryPrice, LIMIT_ORDER_TTL_MS} from "../../dataUtils/limitEntryPrice";
+import {isSameLimitPrice, prepareLimitEntryOrders} from "../../dataUtils/limitEntryManager";
+
+// 同一时间只允许一轮下单：定时任务重试 / 手动触发并发时，
+// 两条请求会在本地记录写入前同时通过去重校验，导致同币种重复挂单
+let isRunning = false;
 
 export const postRecommendData = async (req, res) => {
+    if (isRunning) {
+        console.log('上一轮下单仍在执行，跳过本次请求');
+        return formatResponse(res, 200, 0, {}, '上一轮下单仍在执行，跳过');
+    }
+    isRunning = true;
     try {
         const { hour } = req.body || {};
 
@@ -102,10 +112,21 @@ export const postRecommendData = async (req, res) => {
         console.log(`委托单生成完成：${orderRecommends.map(r => `${r.symbol}(${r.direction},${r.entryType}${r.limitPrice ? '@' + r.limitPrice.toFixed(6) : ''})`).join(', ') || '无'}`);
 
         // 4. 获取所有激活的用户交易配置
-        const options = await UserTradeOptionsModel.find({
+        let options = await UserTradeOptionsModel.find({
             isActive: true,
             isDelete: false,
         }).lean();
+
+        // 4.1 跳过用户已被删除的"孤儿"配置：
+        //     这类配置仍 isActive，会继续下单，表现为"自己账户里冒出其它杠杆/金额的单子"
+        const optionUserIds = [...new Set(options.map(option => String(option.userId)))];
+        const aliveUsers = await UserModel.find({_id: {$in: optionUserIds}}, {_id: 1}).lean();
+        const aliveUserIds = new Set(aliveUsers.map(user => String(user._id)));
+        const orphanOptions = options.filter(option => !aliveUserIds.has(String(option.userId)));
+        if (orphanOptions.length > 0) {
+            console.warn(`跳过 ${orphanOptions.length} 个用户已不存在的交易配置: ${orphanOptions.map(o => `${o.userId}(${o.belong})`).join(', ')}`);
+            options = options.filter(option => aliveUserIds.has(String(option.userId)));
+        }
 
         // 5. 遍历每个用户执行交易
         for (const option of options) {
@@ -142,31 +163,53 @@ export const postRecommendData = async (req, res) => {
                     createdAt: {$gte: moment().startOf('day').toDate()},
                 }).distinct('symbol');
 
-                // 5.3 过滤掉今日已交易的币种，以及仍有未成交限价挂单的币种
-                //     限价单可能跨日仍挂着（24小时有效），不排除会重复挂单
-                const unfilledLimitSymbols = await TradeRecordModel.find({
+                // 5.3 过滤掉今日已交易的币种，以及已有同价未成交限价挂单的币种
+                //     限价单可能跨日仍挂着（24小时有效）
+                //     注意：只有"同价"才跳过；价格已变化的由 prepareLimitEntryOrders 撤旧挂新
+                const pendingLimits = await TradeRecordModel.find({
                     userId: option.userId,
                     exchange: option.belong.toLowerCase(),
                     orderType: 'limit',
                     entryFilled: false,
                     status: 'pending',
                     createdAt: {$gte: moment().subtract(LIMIT_ORDER_TTL_MS, 'milliseconds').toDate()},
-                }).distinct('symbol');
+                }).lean();
 
-                const tradeData = orderRecommends.filter(item =>
-                    !tradedSymbols.includes(item.symbol) && !unfilledLimitSymbols.includes(item.symbol)
-                );
+                const pendingLimitPriceMap = {};
+                pendingLimits.forEach(record => {
+                    if (!pendingLimitPriceMap[record.symbol]) pendingLimitPriceMap[record.symbol] = [];
+                    pendingLimitPriceMap[record.symbol].push(record.limitPrice);
+                });
 
-                if (unfilledLimitSymbols.length > 0) {
-                    console.log(`用户 ${option.userId} 仍有未成交限价单的币种: ${unfilledLimitSymbols.join(', ')}`);
+                const tradeData = orderRecommends.filter(item => {
+                    if (tradedSymbols.includes(item.symbol)) return false;
+                    if (item.entryType !== 'limit') return true;
+                    const pendingPrices = pendingLimitPriceMap[item.symbol] || [];
+                    return !pendingPrices.some(price => isSameLimitPrice(price, item.limitPrice));
+                });
+
+                if (pendingLimits.length > 0) {
+                    console.log(`用户 ${option.userId} 仍有未成交限价单: ${pendingLimits.map(r => `${r.symbol}@${r.limitPrice}`).join(', ')}`);
                 }
 
                 console.log(`用户 ${option.userId} 今日已交易币种: ${tradedSymbols.join(', ') || '无'}，待下单: ${tradeData.length}个`);
 
-                // 5.4 执行下单
-                if (!isEmpty(tradeData)) {
-                    await apiTrade({userOptions: option, tradeData});
-                    console.log(`用户 ${option.userId} 下单完成，共 ${tradeData.length} 个币种`);
+                // 5.4 限价委托：同一账户同一币种同时只保留一条挂单
+                //     同价 -> 保留交易所旧单；异价 -> 先撤旧单再挂新单（跨配置共用同一账户也能撤到）
+                let finalTradeData = tradeData;
+                const limitRecommends = tradeData.filter(item => item.entryType === 'limit');
+                if (!isEmpty(limitRecommends)) {
+                    const placeLimits = await prepareLimitEntryOrders(option, limitRecommends);
+                    const placeSymbols = new Set(placeLimits.map(item => item.symbol));
+                    finalTradeData = tradeData.filter(item =>
+                        item.entryType !== 'limit' || placeSymbols.has(item.symbol)
+                    );
+                }
+
+                // 5.5 执行下单
+                if (!isEmpty(finalTradeData)) {
+                    await apiTrade({userOptions: option, tradeData: finalTradeData});
+                    console.log(`用户 ${option.userId} 下单完成，共 ${finalTradeData.length} 个币种`);
                 } else {
                     console.log(`用户 ${option.userId} 今日已完成所有推荐币种的交易，跳过`);
                 }
@@ -177,5 +220,7 @@ export const postRecommendData = async (req, res) => {
     } catch (e) {
         console.log(e, e.message)
         return formatResponse(res, 500, 1, {}, '服务器错误')
+    } finally {
+        isRunning = false;
     }
 }
